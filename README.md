@@ -1,8 +1,8 @@
 # SDIS Project
 
-SDIS Project for group T&lt;n&gt;G&lt;p&gt;&lt;q&gt;.
+SDIS Project for group T5G04;.
 
 Group members:
 
-1. &lt;first name&gt; &lt;family name&gt; (&lt;email address&gt;)
-2. &lt;first name&gt; &lt;family name&gt; (&lt;email address&gt;)
+1. Henrique Ribeiro (up201806529@fe.up.pt)
+2. Diogo Rosário (up21806582@fe.up.pt)
