@@ -1,2 +1,4 @@
-*/.idea
-*/src/*.class
+.idea
+src/*.class
+g04.iml
+out/

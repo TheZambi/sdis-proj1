@@ -1,50 +1,65 @@
-import javax.xml.crypto.Data;
+import java.io.File;
 import java.io.IOException;
-import java.net.*;
+import java.net.InetAddress;
+import java.net.MulticastSocket;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 
 
-public class Server {
+public class Peer {
+    String protocolVersion;
+    String peerID;
+    String accessPoint;
 
-    private static DatagramSocket dataSocket = null;
+    String multicastAddress;
+    Integer multicastPort;
 
-    void server(String[] args) throws IOException {
-        HashMap<String,String> map = new HashMap<>();
+    public void peer(String[] args) throws IOException, NoSuchAlgorithmException {
+        this.protocolVersion = args[0];
+        this.peerID = args[1];
+        this.accessPoint = args[2];
 
-        int port = Integer.parseInt(args[0]);
+        this.multicastAddress = "230.0.0.0";
+        this.multicastPort = 8080;
 
-        dataSocket = new DatagramSocket(port);
+        InetAddress group = InetAddress.getByName(multicastAddress);
+        MulticastSocket multiSocket = new MulticastSocket(multicastPort);
+        multiSocket.joinGroup(group);
 
-        Timer timer = new Timer(true);
+        byte[] header = makeHeader("PUTCHUNK","test1.txt");
+        System.out.println(Arrays.toString(header));
 
-        ServerAnnouncement sa = new ServerAnnouncement(args);
-        timer.scheduleAtFixedRate(sa,0,1000);
-
-        while(true) {
-            byte[] buf = new byte[256];
-            DatagramPacket dataPack = new DatagramPacket(buf,buf.length);
-
-            dataSocket.receive(dataPack);
-            String s = new String(dataPack.getData());
-
-            String[] arr = s.split("[ |\u0000]");
-
-            if(s.contains("register")) {
-                map.put(arr[1], arr[2]);
-                String reply = "success";
-                dataSocket.send(new DatagramPacket(reply.getBytes(), reply.getBytes().length, dataPack.getAddress(), dataPack.getPort()));
-            }
-            else if(s.contains("lookup"))
-            {
-                String reply = map.get(arr[1]);
-                dataSocket.send(new DatagramPacket(reply.getBytes(), reply.getBytes().length, dataPack.getAddress(), dataPack.getPort()));
-            }
-        }
     }
 
-    public static void main(String[] args) throws IOException {
-        new Server().server(args);
+    private byte[] makeHeader(String msgType, String filePath) throws NoSuchAlgorithmException {
+        String version = this.protocolVersion;
+        String messageType = msgType;
+        String senderID = this.peerID;
+        String fileID = makeFileID(filePath);
+        String chunkNumber = "1";
+        String replicationDegree = "5";
+
+        String finish = version + " " + messageType + " " + senderID + " " + fileID + " " + chunkNumber + " " + replicationDegree + " " + '\r' + '\n';
+        System.out.println(finish);
+        return finish.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private String makeFileID(String filePath) throws NoSuchAlgorithmException {
+        StringBuilder ret = new StringBuilder();
+        File f = new File(filePath);
+        String absPath = f.getAbsolutePath();
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(absPath.getBytes(StandardCharsets.UTF_8));
+        for(byte b : hash){
+            ret.append(String.format("%02x",b));
+        }
+        return ret.toString();
+    }
+
+    public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
+        new Peer().peer(args);
     }
 
 
