@@ -1,11 +1,14 @@
 import java.io.File;
 import java.io.IOException;
+import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 
 public class Peer {
@@ -15,8 +18,10 @@ public class Peer {
 
     String multicastAddress;
     Integer multicastPort;
+    InetAddress group;
+    MulticastSocket multiSocket;
 
-    public void peer(String[] args) throws IOException, NoSuchAlgorithmException {
+    public Peer(String[] args) throws IOException, NoSuchAlgorithmException {
         this.protocolVersion = args[0];
         this.peerID = args[1];
         this.accessPoint = args[2];
@@ -24,13 +29,14 @@ public class Peer {
         this.multicastAddress = "230.0.0.0";
         this.multicastPort = 8080;
 
-        InetAddress group = InetAddress.getByName(multicastAddress);
-        MulticastSocket multiSocket = new MulticastSocket(multicastPort);
-        multiSocket.joinGroup(group);
+        this.group = InetAddress.getByName(this.multicastAddress);
+        this.multiSocket = new MulticastSocket(this.multicastPort);
 
-        byte[] header = makeHeader("PUTCHUNK","test1.txt");
-        System.out.println(Arrays.toString(header));
 
+    }
+
+    public void joinMulticast() throws IOException, NoSuchAlgorithmException {
+        this.multiSocket.joinGroup(this.group);
     }
 
     private byte[] makeHeader(String msgType, String filePath) throws NoSuchAlgorithmException {
@@ -41,7 +47,7 @@ public class Peer {
         String chunkNumber = "1";
         String replicationDegree = "5";
 
-        String finish = version + " " + messageType + " " + senderID + " " + fileID + " " + chunkNumber + " " + replicationDegree + " " + '\r' + '\n';
+        String finish = version + " " + messageType + " " + senderID + " " + fileID + " " + chunkNumber + " " + replicationDegree + " " + '\r' + '\n' + '\r' + '\n';
         System.out.println(finish);
         return finish.getBytes(StandardCharsets.UTF_8);
     }
@@ -58,8 +64,70 @@ public class Peer {
         return ret.toString();
     }
 
+
     public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
-        new Peer().peer(args);
+        Peer peer = new Peer(args);
+        peer.joinMulticast();
+
+        if(args[1].equals("1")) {
+            peer.sendFile(peer);
+        }
+
+        if(args[1].equals("2")) {
+            byte[] pack = new byte[64256];
+            DatagramPacket recv = new DatagramPacket(pack, pack.length);
+            peer.multiSocket.receive(recv);
+
+            List<String> msg = peer.parseMessage(recv);
+
+            System.out.println(msg.toString());
+
+        }
+    }
+
+    private List<String> parseMessage(DatagramPacket recv) {
+        List<String> parsedMessage = new ArrayList<>();
+        String s = new String(recv.getData()).substring(0,recv.getLength()); //ignores following \0
+        String[] arr = s.split("\r\n\r\n"); //separates body from header
+        String header = arr[0];
+        String body = "";
+        if(arr.length ==2)
+            body = arr[1];
+        String[] aux = header.split(" ",4);
+        parsedMessage.add(aux[0]); //version of protocol
+        parsedMessage.add(aux[1]); // command to be made
+        parsedMessage.add(aux[2]); //peer id
+        String fileID = "";
+        for(int i=0; i<64; i++)
+            fileID += aux[3].charAt(i); //gets the next 64 bytes which correspond to the encrypted file id
+
+        parsedMessage.add(fileID);
+        String[] left = aux[3].substring(65).split(" "); //gets the arguments that might come after
+        if(!left[0].equals(""))
+            parsedMessage.addAll(Arrays.asList(left)); //if there are any arguments in the array left they are added to the parsedMessage
+
+        parsedMessage.add(body); //adds the body to the parsedMessage
+
+        return parsedMessage;
+    }
+
+    private void sendFile(Peer peer) throws NoSuchAlgorithmException, IOException {
+        DatagramPacket pack = peer.makePacket();
+        peer.multiSocket.send(pack);
+    }
+
+    private DatagramPacket makePacket() throws NoSuchAlgorithmException {
+        byte[] header = this.makeHeader("PUTCHUNK","test1.txt");
+        byte[] teste = "Teste\0Teste".getBytes();
+
+        int aLen = header.length;
+        int bLen = teste.length;
+        byte[] result = new byte[aLen + bLen];
+
+        System.arraycopy(header, 0, result, 0, aLen);
+        System.arraycopy(teste, 0, result, aLen, bLen);
+
+        return new DatagramPacket(result, result.length, this.group, this.multicastPort);
     }
 
 
