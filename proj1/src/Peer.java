@@ -1,4 +1,3 @@
-import javax.xml.crypto.Data;
 import java.io.File;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -7,65 +6,67 @@ import java.net.MulticastSocket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.SQLOutput;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
-import static java.lang.Thread.sleep;
 
 
 public class Peer {
     String protocolVersion;
     String peerID;
     String accessPoint;
+    
+    InetAddress controlGroup;
+    Integer controlPort;
+    MulticastSocket controlSocket;
+    
+    InetAddress dataGroup;
+    Integer dataPort;
+    MulticastSocket dataSocket;
 
-    String multicastAddress;
-    Integer multicastPort;
-    InetAddress group;
-    MulticastSocket multiSocket;
+    InetAddress recoveryGroup;
+    Integer recoveryPort;
+    MulticastSocket recoverySocket;
 
     public Peer(String[] args) throws IOException, NoSuchAlgorithmException {
         this.protocolVersion = args[0];
         this.peerID = args[1];
         this.accessPoint = args[2];
 
-        this.multicastAddress = "230.0.0.0";
-        this.multicastPort = 8080;
+        String multicastControl = args[3];
+        String multicastData = args[4];
+        String multicastRecovery = args[5];
 
-        this.group = InetAddress.getByName(this.multicastAddress);
-        this.multiSocket = new MulticastSocket(this.multicastPort);
+        this.controlGroup = InetAddress.getByName(multicastControl.split(":")[0]);
+        this.controlPort = Integer.parseInt(multicastControl.split(":")[1]);
+        this.controlSocket = new MulticastSocket(this.controlPort);
+
+
+        this.dataGroup = InetAddress.getByName(multicastData.split(":")[0]);
+        this.dataPort = Integer.parseInt(multicastData.split(":")[1]);
+        this.dataSocket = new MulticastSocket(this.dataPort);
+
+
+        this.recoveryGroup = InetAddress.getByName(multicastRecovery.split(":")[0]);
+        this.recoveryPort = Integer.parseInt(multicastRecovery.split(":")[1]);
+        this.recoverySocket = new MulticastSocket(this.recoveryPort);
     }
 
-    public static void main(String[] args) throws IOException, NoSuchAlgorithmException, InterruptedException {
+    public static void main(String[] args) throws IOException, NoSuchAlgorithmException {
         Peer peer = new Peer(args);
         peer.joinMulticast();
 
         if(args[1].equals("1")) {
             String fileID = peer.makeFileID("test1.txt");
             peer.sendPacket("PUTCHUNK",fileID, "1", "5");
-
-
-            byte[] pack = new byte[64256];
-            DatagramPacket recv = new DatagramPacket(pack, pack.length);
-            peer.multiSocket.receive(recv);
-
-            List<String> msg = peer.parseMessage(recv);
-            peer.interpretMessage(msg);
-        }
-
-        if(args[1].equals("2")) {
-            byte[] pack = new byte[64256];
-            DatagramPacket recv = new DatagramPacket(pack, pack.length);
-            peer.multiSocket.receive(recv);
-
-            List<String> msg = peer.parseMessage(recv);
-            peer.interpretMessage(msg);
-
         }
     }
 
     private void interpretMessage(List<String> msg) throws NoSuchAlgorithmException, IOException {
+        //Ignore own messages
+        if(msg.get(2).equals(this.peerID))
+            return;
+
         switch(msg.get(1)){
             case "PUTCHUNK":
                 System.out.println("PUTCHUNK");
@@ -89,12 +90,67 @@ public class Peer {
                 break;
 
         }
-
     }
 
+    public void joinMulticast() throws IOException {
+        this.controlSocket.joinGroup(this.controlGroup);
+        this.dataSocket.joinGroup(this.dataGroup);
+        this.recoverySocket.joinGroup(this.recoveryGroup);
 
-    public void joinMulticast() throws IOException, NoSuchAlgorithmException {
-        this.multiSocket.joinGroup(this.group);
+        Thread control = new Thread(() -> {
+            byte[] pack = new byte[64256];
+            DatagramPacket recv = new DatagramPacket(pack, pack.length);
+            try {
+                this.controlSocket.receive(recv);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            List<String> msg = this.parseMessage(recv);
+            try {
+                this.interpretMessage(msg);
+            } catch (Exception e) {
+                e.printStackTrace();
+        }});
+
+
+        Thread data = new Thread(() -> {
+            byte[] pack = new byte[64256];
+            DatagramPacket recv = new DatagramPacket(pack, pack.length);
+            try {
+                this.dataSocket.receive(recv);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            List<String> msg = this.parseMessage(recv);
+            try {
+                this.interpretMessage(msg);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+
+        Thread recovery = new Thread(() -> {
+            byte[] pack = new byte[64256];
+            DatagramPacket recv = new DatagramPacket(pack, pack.length);
+            try {
+                this.recoverySocket.receive(recv);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            List<String> msg = this.parseMessage(recv);
+            try {
+                this.interpretMessage(msg);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+
+        control.start();
+        data.start();
+        recovery.start();
     }
 
     private byte[] makeHeader(String msgType, String fID, String chunkNO, String repDegree) throws NoSuchAlgorithmException {
@@ -162,8 +218,46 @@ public class Peer {
         System.arraycopy(header, 0, result, 0, aLen);
         System.arraycopy(teste, 0, result, aLen, bLen);
 
-        DatagramPacket pack = new DatagramPacket(result, result.length, this.group, this.multicastPort);
-        this.multiSocket.send(pack);
+
+        InetAddress groupToSend = null;
+        Integer portToSend = null;
+        MulticastSocket socketToSend = null;
+        switch(messageType){
+            case "PUTCHUNK":
+                groupToSend = this.dataGroup;
+                portToSend = this.dataPort;
+                socketToSend = this.dataSocket;
+                break;
+            case "GETCHUNK":
+                groupToSend = this.controlGroup;
+                portToSend = this.controlPort;
+                socketToSend = this.controlSocket;
+                break;
+            case "DELETE":
+                groupToSend = this.controlGroup;
+                portToSend = this.controlPort;
+                socketToSend = this.controlSocket;
+                break;
+            case "REMOVED":
+                groupToSend = this.controlGroup;
+                portToSend = this.controlPort;
+                socketToSend = this.controlSocket;
+                break;
+            case "STORED":
+                groupToSend = this.controlGroup;
+                portToSend = this.controlPort;
+                socketToSend = this.controlSocket;
+                break;
+            case "CHUNK":
+                groupToSend = this.recoveryGroup;
+                portToSend = this.recoveryPort;
+                socketToSend = this.recoverySocket;
+                break;
+
+        }
+
+        DatagramPacket pack = new DatagramPacket(result, result.length, groupToSend, portToSend);
+        socketToSend.send(pack);
     }
 
 
