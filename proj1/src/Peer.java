@@ -1,9 +1,13 @@
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -58,7 +62,11 @@ public class Peer {
 
         if(args[1].equals("1")) {
             String fileID = peer.makeFileID("test1.txt");
-            peer.sendPacket("PUTCHUNK",fileID, "1", "5");
+
+            Path fileName = Path.of("test1.txt");
+            String body = Files.readString(fileName);
+
+            peer.sendPacket("DELETE",fileID, "1", "5",body);
         }
     }
 
@@ -70,14 +78,15 @@ public class Peer {
         switch(msg.get(1)){
             case "PUTCHUNK":
                 System.out.println("PUTCHUNK");
-                this.sendPacket("STORED",msg.get(3),msg.get(4),null);
+                this.putchunk(msg);
                 break;
             case "GETCHUNK":
                 System.out.println("GETCHUNK");
-                this.sendPacket("CHUNK",msg.get(3),msg.get(4),null);
+                this.getchunk(msg);
                 break;
             case "DELETE":
                 System.out.println("DELETE");
+                this.deletechunk(msg);
                 break;
             case "REMOVED":
                 System.out.println("REMOVED");
@@ -90,6 +99,50 @@ public class Peer {
                 break;
 
         }
+    }
+
+    private void deletechunk(List<String> msg) {
+        //Current pwd
+        Path currentRelativePath = Paths.get("");
+        String path = currentRelativePath.toAbsolutePath().toString();
+
+        String filename = msg.get(3);
+        File f = new File(path);
+        String[] pathnames;
+        pathnames = f.list();
+        if(pathnames != null) {
+            for (String pathname : pathnames) {
+                if (pathname.contains(msg.get(3))) {
+                    File file = new File(pathname);
+                    file.delete();
+                }
+            }
+        }
+    }
+
+    private void getchunk(List<String> msg) throws IOException, NoSuchAlgorithmException {
+        String filename = msg.get(3)+"_"+msg.get(4)+".txt";
+        try{
+            Path filePath = Path.of(filename);
+            String body = Files.readString(filePath);
+            this.sendPacket("CHUNK",msg.get(3),msg.get(4),null,body);
+        }
+        catch (Exception e){
+            System.out.println("Chunk does not exist on this peer's file system");
+        }
+    }
+
+    private void putchunk(List<String> msg) throws IOException, NoSuchAlgorithmException {
+        //fileID_chunkNO.txt
+        String filename = msg.get(3)+"_"+msg.get(4)+".txt";
+        File file = new File(filename);
+        if (file.createNewFile()) {
+            FileWriter writer = new FileWriter(filename);
+            writer.write(msg.get(6));
+            writer.close();
+        }
+        this.sendPacket("STORED",msg.get(3),msg.get(4),null,"");
+
     }
 
     public void joinMulticast() throws IOException {
@@ -207,16 +260,16 @@ public class Peer {
         return parsedMessage;
     }
 
-    private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree) throws NoSuchAlgorithmException, IOException {
+    private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree,String body) throws NoSuchAlgorithmException, IOException {
         byte[] header = this.makeHeader(messageType,fileID,chunkNO, replicationDegree);
-        byte[] teste = "Teste\0Teste".getBytes();
+        byte[] msgBody = body.getBytes();
 
         int aLen = header.length;
-        int bLen = teste.length;
+        int bLen = msgBody.length;
         byte[] result = new byte[aLen + bLen];
 
         System.arraycopy(header, 0, result, 0, aLen);
-        System.arraycopy(teste, 0, result, aLen, bLen);
+        System.arraycopy(msgBody, 0, result, aLen, bLen);
 
 
         InetAddress groupToSend = null;
