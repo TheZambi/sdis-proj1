@@ -1,3 +1,4 @@
+import javax.sound.midi.Soundbank;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -67,8 +68,6 @@ public class Peer {
             Path fileName = Path.of(filePath);
             String body = Files.readString(fileName);
 
-            System.out.println(body);
-
             peer.sendPacket("PUTCHUNK",fileID, "1", "5",body);
         }
     }
@@ -80,16 +79,46 @@ public class Peer {
 
         switch(msg.get(1)){
             case "PUTCHUNK":
-                System.out.println("PUTCHUNK");
-                this.putchunk(msg);
+                Thread savingChunk = new Thread(() -> {
+                    System.out.println("PUTCHUNK");
+                    System.out.println(msg.get(3));
+
+                    try {
+                        this.putchunk(msg);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
+
+                savingChunk.start();
                 break;
             case "GETCHUNK":
-                System.out.println("GETCHUNK");
-                this.getchunk(msg);
+                Thread getChunk = new Thread(() -> {
+                    System.out.println("GETCHUNK");
+
+                    try {
+                        this.getchunk(msg);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
+
+                getChunk.start();
+
                 break;
             case "DELETE":
-                System.out.println("DELETE");
-                this.deletechunk(msg);
+
+                Thread deleteChunk = new Thread(() -> {
+                    System.out.println("DELETE");
+
+                    try {
+                        this.deletechunk(msg);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
+
+                deleteChunk.start();
                 break;
             case "REMOVED":
                 System.out.println("REMOVED");
@@ -154,36 +183,40 @@ public class Peer {
         this.recoverySocket.joinGroup(this.recoveryGroup);
 
         Thread control = new Thread(() -> {
-            byte[] pack = new byte[64256];
-            DatagramPacket recv = new DatagramPacket(pack, pack.length);
-            try {
-                this.controlSocket.receive(recv);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            while(true){
+                byte[] pack = new byte[64256];
+                DatagramPacket recv = new DatagramPacket(pack, pack.length);
+                try {
+                    this.controlSocket.receive(recv);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
 
-            List<String> msg = this.parseMessage(recv);
-            try {
-                this.interpretMessage(msg);
-            } catch (Exception e) {
-                e.printStackTrace();
+                List<String> msg = this.parseMessage(recv);
+                try {
+                    this.interpretMessage(msg);
+                } catch (Exception e) {
+                    e.printStackTrace();
+            }
         }});
 
-
         Thread data = new Thread(() -> {
-            byte[] pack = new byte[64256];
-            DatagramPacket recv = new DatagramPacket(pack, pack.length);
-            try {
-                this.dataSocket.receive(recv);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            while(true) {
 
-            List<String> msg = this.parseMessage(recv);
-            try {
-                this.interpretMessage(msg);
-            } catch (Exception e) {
-                e.printStackTrace();
+                byte[] pack = new byte[64256];
+                DatagramPacket recv = new DatagramPacket(pack, pack.length);
+                try {
+                    this.dataSocket.receive(recv);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                List<String> msg = this.parseMessage(recv);
+                try {
+                    this.interpretMessage(msg);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         });
 
@@ -274,7 +307,6 @@ public class Peer {
         System.arraycopy(header, 0, result, 0, aLen);
         System.arraycopy(msgBody, 0, result, aLen, bLen);
 
-
         InetAddress groupToSend = null;
         Integer portToSend = null;
         MulticastSocket socketToSend = null;
@@ -303,6 +335,4 @@ public class Peer {
         DatagramPacket pack = new DatagramPacket(result, result.length, groupToSend, portToSend);
         socketToSend.send(pack);
     }
-
-
 }
