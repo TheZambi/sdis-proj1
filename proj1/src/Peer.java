@@ -61,12 +61,15 @@ public class Peer {
         peer.joinMulticast();
 
         if(args[1].equals("1")) {
-            String fileID = peer.makeFileID("test1.txt");
+            String filePath = "../peer" + peer.peerID + "/" + "test1.txt";
+            String fileID = peer.makeFileID(filePath);
 
-            Path fileName = Path.of("test1.txt");
+            Path fileName = Path.of(filePath);
             String body = Files.readString(fileName);
 
-            peer.sendPacket("DELETE",fileID, "1", "5",body);
+            System.out.println(body);
+
+            peer.sendPacket("PUTCHUNK",fileID, "1", "5",body);
         }
     }
 
@@ -102,22 +105,16 @@ public class Peer {
     }
 
     private void deletechunk(List<String> msg) {
-        //Current pwd
-        Path currentRelativePath = Paths.get("");
-        String path = currentRelativePath.toAbsolutePath().toString();
 
-        String filename = msg.get(3);
-        File f = new File(path);
-        String[] pathnames;
-        pathnames = f.list();
-        if(pathnames != null) {
-            for (String pathname : pathnames) {
-                if (pathname.contains(msg.get(3))) {
-                    File file = new File(pathname);
-                    file.delete();
-                }
+        File file = new File("../peer" + this.peerID + "/" + msg.get(3));
+
+        File[] contents = file.listFiles();
+        if (contents != null) {
+            for (File f : contents) {
+                f.delete();
             }
         }
+        file.delete();
     }
 
     private void getchunk(List<String> msg) throws IOException, NoSuchAlgorithmException {
@@ -134,7 +131,13 @@ public class Peer {
 
     private void putchunk(List<String> msg) throws IOException, NoSuchAlgorithmException {
         //fileID_chunkNO.txt
-        String filename = msg.get(3)+"_"+msg.get(4)+".txt";
+
+        File dir = new File("../peer" + this.peerID + "/" + msg.get(3));
+        if (!dir.exists()){
+            dir.mkdirs();
+        }
+
+        String filename = dir+ "/" + msg.get(3)+"_"+msg.get(4)+".txt";
         File file = new File(filename);
         if (file.createNewFile()) {
             FileWriter writer = new FileWriter(filename);
@@ -184,26 +187,26 @@ public class Peer {
             }
         });
 
-        Thread recovery = new Thread(() -> {
-            byte[] pack = new byte[64256];
-            DatagramPacket recv = new DatagramPacket(pack, pack.length);
-            try {
-                this.recoverySocket.receive(recv);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-            List<String> msg = this.parseMessage(recv);
-            try {
-                this.interpretMessage(msg);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
+//        Thread recovery = new Thread(() -> {
+//            byte[] pack = new byte[64256];
+//            DatagramPacket recv = new DatagramPacket(pack, pack.length);
+//            try {
+//                this.recoverySocket.receive(recv);
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//
+//            List<String> msg = this.parseMessage(recv);
+//            try {
+//                this.interpretMessage(msg);
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//        });
 
         control.start();
         data.start();
-        recovery.start();
+//        recovery.start();
     }
 
     private byte[] makeHeader(String msgType, String fID, String chunkNO, String repDegree) throws NoSuchAlgorithmException {
@@ -282,20 +285,8 @@ public class Peer {
                 socketToSend = this.dataSocket;
                 break;
             case "GETCHUNK":
-                groupToSend = this.controlGroup;
-                portToSend = this.controlPort;
-                socketToSend = this.controlSocket;
-                break;
             case "DELETE":
-                groupToSend = this.controlGroup;
-                portToSend = this.controlPort;
-                socketToSend = this.controlSocket;
-                break;
             case "REMOVED":
-                groupToSend = this.controlGroup;
-                portToSend = this.controlPort;
-                socketToSend = this.controlSocket;
-                break;
             case "STORED":
                 groupToSend = this.controlGroup;
                 portToSend = this.controlPort;
