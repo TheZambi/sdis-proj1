@@ -55,7 +55,8 @@ public class Peer {
                 peer.sendPacket("PUTCHUNK", fileID, "1", "1", body);
                 Thread.sleep(1000);
                 System.out.println(peer.replicationDegreeMap.get(fileID + "_" + "1").toString());
-            }while(peer.replicationDegreeMap.get(fileID + "_" + "1").size() < 2);
+            }while(peer.replicationDegreeMap.get(fileID + "_" + "1").size() < 1);
+            peer.sendPacket("GETCHUNK", fileID, "1", "", "");
 
         }
     }
@@ -121,6 +122,7 @@ public class Peer {
                 break;
             case "CHUNK":
                 System.out.println("CHUNK");
+                System.out.println(msg.get(5));
                 break;
 
         }
@@ -146,7 +148,7 @@ public class Peer {
     }
 
     private void getchunk(List<String> msg) throws IOException, NoSuchAlgorithmException {
-        String filename = msg.get(3)+"_"+msg.get(4)+".txt";
+        String filename = "../peer" + this.peerID + "/" + msg.get(3) + "/" + msg.get(3)+"_"+msg.get(4)+".txt";
         try{
             Path filePath = Path.of(filename);
             String body = Files.readString(filePath);
