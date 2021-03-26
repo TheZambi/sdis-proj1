@@ -68,7 +68,7 @@ public class Peer {
             Path fileName = Path.of(filePath);
             String body = Files.readString(fileName);
 
-            peer.sendPacket("PUTCHUNK",fileID, "1", "5",body);
+            peer.sendPacket("DELETE",fileID, "1", "5",body);
         }
     }
 
@@ -77,12 +77,10 @@ public class Peer {
         if(msg.get(2).equals(this.peerID))
             return;
 
+        System.out.println("Type of message received:" + msg.get(1));
         switch(msg.get(1)){
             case "PUTCHUNK":
                 Thread savingChunk = new Thread(() -> {
-                    System.out.println("PUTCHUNK");
-                    System.out.println(msg.get(3));
-
                     try {
                         this.putchunk(msg);
                     } catch (Exception e) {
@@ -94,7 +92,6 @@ public class Peer {
                 break;
             case "GETCHUNK":
                 Thread getChunk = new Thread(() -> {
-                    System.out.println("GETCHUNK");
 
                     try {
                         this.getchunk(msg);
@@ -109,7 +106,6 @@ public class Peer {
             case "DELETE":
 
                 Thread deleteChunk = new Thread(() -> {
-                    System.out.println("DELETE");
 
                     try {
                         this.deletechunk(msg);
@@ -121,13 +117,10 @@ public class Peer {
                 deleteChunk.start();
                 break;
             case "REMOVED":
-                System.out.println("REMOVED");
                 break;
             case "STORED":
-                System.out.println("STORED");
                 break;
             case "CHUNK":
-                System.out.println("CHUNK");
                 break;
 
         }
@@ -188,32 +181,31 @@ public class Peer {
                 DatagramPacket recv = new DatagramPacket(pack, pack.length);
                 try {
                     this.controlSocket.receive(recv);
+                    System.out.println("received data on control multicast");
+                    List<String> msg = this.parseMessage(recv);
+                    this.interpretMessage(msg);
+//                    Thread.sleep(200);
+
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-
-                List<String> msg = this.parseMessage(recv);
-                try {
-                    this.interpretMessage(msg);
-                } catch (Exception e) {
-                    e.printStackTrace();
             }
-        }});
+        });
 
         Thread data = new Thread(() -> {
             while(true) {
-
                 byte[] pack = new byte[64256];
                 DatagramPacket recv = new DatagramPacket(pack, pack.length);
                 try {
                     this.dataSocket.receive(recv);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
 
-                List<String> msg = this.parseMessage(recv);
-                try {
+                    System.out.println("received from data multicast");
+
+                    List<String> msg = this.parseMessage(recv);
                     this.interpretMessage(msg);
+//                    Thread.sleep(1005);
+//                    System.out.println("finished sleeping");
+
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -303,6 +295,10 @@ public class Peer {
         int aLen = header.length;
         int bLen = msgBody.length;
         byte[] result = new byte[aLen + bLen];
+
+
+        System.out.println("\n" + messageType + "\n");
+
 
         System.arraycopy(header, 0, result, 0, aLen);
         System.arraycopy(msgBody, 0, result, aLen, bLen);
