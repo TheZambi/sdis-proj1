@@ -9,16 +9,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Random;
 
-import static java.lang.System.*;
+import static java.lang.System.arraycopy;
 
 
 public class Peer {
-    HashMap<String, List<String>> replicationDegreeMap = new HashMap<String, List<String>>();
-    HashMap<String, Integer> desiredRepDegree = new HashMap<String, Integer>();
-    HashMap<String, Boolean> restore = new HashMap<String, Boolean>();
+    HashMap<String, List<String>> replicationDegreeMap = new HashMap<>();
+    HashMap<String, Integer> desiredRepDegree = new HashMap<>();
+    HashMap<String, Boolean> restore = new HashMap<>();
 
     String protocolVersion;
     String peerID;
@@ -187,7 +189,7 @@ public class Peer {
         file.delete();
     }
 
-    private void getchunk(Message msg) throws IOException, NoSuchAlgorithmException {
+    private void getchunk(Message msg) {
         String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO + ".txt";
         try{
             Path filePath = Path.of(filename);
@@ -237,9 +239,7 @@ public class Peer {
 
     private byte[] makeHeader(String msgType, String fID, String chunkNO, String repDegree){
         String version = this.protocolVersion;
-        String messageType = msgType;
         String senderID = this.peerID;
-        String fileID = fID;
         String chunkNumber = "";
         if(chunkNO != null)
             chunkNumber = " " + chunkNO;
@@ -247,7 +247,7 @@ public class Peer {
         if(repDegree != null)
             replicationDegree = " " + repDegree;
 
-        String finish = version + " " + messageType + " " + senderID + " " + fileID + chunkNumber + replicationDegree + " " + '\r' + '\n' + '\r' + '\n';
+        String finish = version + " " + msgType + " " + senderID + " " + fID + chunkNumber + replicationDegree + " " + '\r' + '\n' + '\r' + '\n';
         return finish.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -266,7 +266,7 @@ public class Peer {
 
 
 
-    private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree,String body) throws NoSuchAlgorithmException, IOException {
+    private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree,String body) throws IOException {
         byte[] header = this.makeHeader(messageType,fileID,chunkNO, replicationDegree);
         byte[] msgBody = body.getBytes();
 
@@ -303,7 +303,6 @@ public class Peer {
                 portToSend = this.recoveryListener.port;
                 socketToSend = this.recoveryListener.socket;
                 break;
-
         }
 
         DatagramPacket pack = new DatagramPacket(result, result.length, groupToSend, portToSend);
