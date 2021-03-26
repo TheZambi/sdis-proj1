@@ -9,10 +9,10 @@ public class Listener {
     MulticastSocket socket;
     Peer peer;
 
-    public Listener(String multicastControl, Peer peer) throws Exception {
+    public Listener(String multicastInfo, Peer peer) throws Exception {
         this.peer = peer;
-        this.group = InetAddress.getByName(multicastControl.split(":")[0]);
-        this.port = Integer.parseInt(multicastControl.split(":")[1]);
+        this.group = InetAddress.getByName(multicastInfo.split(":")[0]);
+        this.port = Integer.parseInt(multicastInfo.split(":")[1]);
         this.socket = new MulticastSocket(this.port);
     }
 
@@ -28,7 +28,7 @@ public class Listener {
                     e.printStackTrace();
                 }
 
-                List<String> msg = this.peer.parseMessage(recv);
+                Message msg = new Message(recv);
                 try {
                     this.peer.interpretMessage(msg);
                 } catch (Exception e) {

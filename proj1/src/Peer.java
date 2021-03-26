@@ -10,10 +10,15 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
+
+import static java.lang.System.*;
 
 
 public class Peer {
     HashMap<String, List<String>> replicationDegreeMap = new HashMap<String, List<String>>();
+    HashMap<String, Integer> desiredRepDegree = new HashMap<String, Integer>();
+    HashMap<String, Boolean> restore = new HashMap<String, Boolean>();
 
     String protocolVersion;
     String peerID;
@@ -43,54 +48,62 @@ public class Peer {
         Peer peer = new Peer(args);
         peer.joinMulticast();
 
+        String filePath = "../peer1/" + "test1.txt";
+        String fileID = peer.makeFileID(filePath);
         if(args[1].equals("1")) {
-            String filePath = "../peer" + peer.peerID + "/" + "test1.txt";
-            String fileID = peer.makeFileID(filePath);
 
             Path fileName = Path.of(filePath);
             String body = Files.readString(fileName);
 
-            do {
-                System.out.println("Sending msg");
-                peer.sendPacket("PUTCHUNK", fileID, "1", "1", body);
-                Thread.sleep(1000);
-                System.out.println(peer.replicationDegreeMap.get(fileID + "_" + "1").toString());
-            }while(peer.replicationDegreeMap.get(fileID + "_" + "1").size() < 1);
-            peer.sendPacket("GETCHUNK", fileID, "1", "", "");
-
+            peer.sendPutchunk(fileID, "1", "2", body);
         }
     }
 
-    public void interpretMessage(List<String> msg) throws NoSuchAlgorithmException, IOException {
+    private void sendPutchunk(String fileID,String chunkNO,String replicationDegree ,String body) throws Exception {
+
+        do {
+            this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body);
+            Thread.sleep(1000);
+        }while(this.replicationDegreeMap.get(fileID + "_" + "1").size() < this.desiredRepDegree.get(fileID + "_" + "1"));
+
+    }
+
+    public void printMsg(String messageType, String peerID)
+    {
+        System.out.println("[Peer " + this.peerID + "] Received message of type " + messageType + " from peer " + peerID);
+    }
+
+    public void interpretMessage(Message msg) throws Exception {
         //Ignore own messages
-        if(msg.get(2).equals(this.peerID))
+        if(msg.peerID.equals(this.peerID))
             return;
 
-        switch(msg.get(1)){
+        String fileChunk = msg.fileID + "_" + msg.chunkNO;
+        printMsg(msg.messageType, msg.peerID);
+        switch(msg.messageType){
             case "PUTCHUNK":
-                Thread savingChunk = new Thread(() -> {
-                    System.out.println("PUTCHUNK");
-                    System.out.println(msg.get(3));
-
-                    try {
-                        this.putchunk(msg);
-                        this.replicationDegreeMap.put( msg.get(3) + "_" + msg.get(4), new ArrayList<>());
-                        this.replicationDegreeMap.get(msg.get(3) + "_" + msg.get(4)).add(this.peerID);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
-
-                savingChunk.start();
+                if(!this.peerID.equals("1")) {
+                    Thread savingChunk = new Thread(() -> {
+                        try {
+                            this.putchunk(msg);
+                            this.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
+                            if (this.replicationDegreeMap.get(fileChunk) == null) {
+                                this.replicationDegreeMap.put(fileChunk, new ArrayList<>());
+                                this.replicationDegreeMap.get(fileChunk).add(this.peerID);
+                            }
+                            this.restore.put(fileChunk, false);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    });
+                    savingChunk.start();
+                }
                 break;
             case "GETCHUNK":
                 Thread getChunk = new Thread(() -> {
-                    System.out.println("GETCHUNK");
 
                     try {
                         this.getchunk(msg);
-
-
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -102,10 +115,9 @@ public class Peer {
             case "DELETE":
 
                 Thread deleteChunk = new Thread(() -> {
-                    System.out.println("DELETE");
 
                     try {
-                        this.deletechunk(msg);
+                        this.deletechunk(msg.fileID);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -114,29 +126,57 @@ public class Peer {
                 deleteChunk.start();
                 break;
             case "REMOVED":
-                System.out.println("REMOVED");
+
+                Thread removedChunk = new Thread(() -> {
+                    try {
+                        this.updateRepDegreeRemove(msg);
+
+                        if(this.replicationDegreeMap.get(fileChunk)!= null && this.replicationDegreeMap.get(fileChunk).contains(this.peerID))
+                            if (this.replicationDegreeMap.get(fileChunk).size() < this.desiredRepDegree.get(fileChunk)) {
+                                this.restore.put(fileChunk, true);
+                                Random rand = new Random();
+                                Thread.sleep(rand.nextInt(400));
+                                if (this.restore.get(fileChunk)) {
+                                    String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + fileChunk + ".txt";
+                                    Path filePath = Path.of(filename);
+                                    String body = Files.readString(filePath);
+
+                                    this.sendPutchunk(msg.fileID, msg.chunkNO, this.desiredRepDegree.get(fileChunk).toString(), body);
+                                }
+                            }
+                    }catch (Exception e){
+                        e.printStackTrace();
+                    }
+                });
+
+                removedChunk.start();
                 break;
             case "STORED":
-                System.out.println("STORED");
-                this.updateRepDegree(msg);
+                this.updateRepDegreeAdd(msg);
                 break;
             case "CHUNK":
-                System.out.println("CHUNK");
-                System.out.println(msg.get(5));
+                this.saveChunk(msg.fileID, msg.chunkNO, msg.body);
                 break;
 
         }
     }
 
-    private void updateRepDegree(List<String> msg) {
-        if(this.replicationDegreeMap.get(msg.get(3) + "_" + msg.get(4)) != null)
-            if(!this.replicationDegreeMap.get(msg.get(3) + "_" + msg.get(4)).contains(msg.get(2)))
-                this.replicationDegreeMap.get(msg.get(3) + "_" + msg.get(4)).add(msg.get(2));
+    private void updateRepDegreeAdd(Message msg) {
+        String file = msg.fileID + "_" + msg.chunkNO;
+        if(this.replicationDegreeMap.get(file) != null)
+            if(!this.replicationDegreeMap.get(file).contains(msg.peerID))
+                this.replicationDegreeMap.get(msg.fileID + "_" + msg.chunkNO).add(msg.peerID);
     }
 
-    private void deletechunk(List<String> msg) {
+    private void updateRepDegreeRemove(Message msg) {
+        String file = msg.fileID + "_" + msg.chunkNO;
+        if(this.replicationDegreeMap.get(file) != null)
+            this.replicationDegreeMap.get(file).remove(msg.peerID);
+    }
 
-        File file = new File("../peer" + this.peerID + "/" + msg.get(3));
+    private void deletechunk(String fileID) {
+
+        File file = new File("../peer" + this.peerID + "/" + fileID);
 
         File[] contents = file.listFiles();
         if (contents != null) {
@@ -147,40 +187,46 @@ public class Peer {
         file.delete();
     }
 
-    private void getchunk(List<String> msg) throws IOException, NoSuchAlgorithmException {
-        String filename = "../peer" + this.peerID + "/" + msg.get(3) + "/" + msg.get(3)+"_"+msg.get(4)+".txt";
+    private void getchunk(Message msg) throws IOException, NoSuchAlgorithmException {
+        String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO + ".txt";
         try{
             Path filePath = Path.of(filename);
             String body = Files.readString(filePath);
             Random rand = new Random();
             Thread.sleep(rand.nextInt(400));
-            this.sendPacket("CHUNK",msg.get(3),msg.get(4),null,body);
+            this.sendPacket("CHUNK",msg.fileID,msg.chunkNO,null,body);
         }
         catch (Exception e){
             System.out.println("Chunk does not exist on this peer's file system");
         }
     }
 
-    private void putchunk(List<String> msg) throws Exception {
-        //fileID_chunkNO.txt
+    private void putchunk(Message msg) throws Exception {
 
-        File dir = new File("../peer" + this.peerID + "/" + msg.get(3));
+
+        saveChunk(msg.fileID, msg.chunkNO, msg.body);
+        Random rand = new Random();
+        Thread.sleep(rand.nextInt(400));
+        this.sendPacket("STORED",msg.fileID,msg.chunkNO,null,"");
+
+    }
+
+    private void saveChunk(String fileID, String chunkNO, String body) throws IOException {
+        //fileID_chunkNO.txt
+        File dir = new File("../peer" + this.peerID + "/" + fileID);
+
         if (!dir.exists()){
             dir.mkdirs();
         }
 
-        String filename = dir+ "/" + msg.get(3)+"_"+msg.get(4)+".txt";
+        String filename = dir+ "/" + fileID + "_" + chunkNO + ".txt";
         File file = new File(filename);
-        if (file.createNewFile()) {
+        file.delete();
+        if(file.createNewFile()) {
             FileWriter writer = new FileWriter(filename);
-            writer.write(msg.get(6));
+            writer.write(body);
             writer.close();
         }
-
-        Random rand = new Random();
-        Thread.sleep(rand.nextInt(400));
-        this.sendPacket("STORED",msg.get(3),msg.get(4),null,"");
-
     }
 
     public void joinMulticast() throws Exception {
@@ -189,7 +235,7 @@ public class Peer {
         this.recoveryListener.startThread();
     }
 
-    private byte[] makeHeader(String msgType, String fID, String chunkNO, String repDegree) throws NoSuchAlgorithmException {
+    private byte[] makeHeader(String msgType, String fID, String chunkNO, String repDegree){
         String version = this.protocolVersion;
         String messageType = msgType;
         String senderID = this.peerID;
@@ -218,30 +264,7 @@ public class Peer {
     }
 
 
-    public List<String> parseMessage(DatagramPacket recv) {
-        List<String> parsedMessage = new ArrayList<>();
-        String s = new String(recv.getData()).substring(0,recv.getLength()); //ignores following \0
-        String[] arr = s.split("\r\n\r\n"); //separates body from header
-        String header = arr[0];
-        String body = "";
-        if(arr.length ==2)
-            body = arr[1];
-        String[] aux = header.split(" ",4);
-        parsedMessage.add(aux[0]); //version of protocol
-        parsedMessage.add(aux[1]); // command to be made
-        parsedMessage.add(aux[2]); //peer id
-        String fileID = "";
-        for(int i=0; i<64; i++)
-            fileID += aux[3].charAt(i); //gets the next 64 bytes which correspond to the encrypted file id
 
-        parsedMessage.add(fileID);
-        String[] left = aux[3].substring(65).split(" "); //gets the arguments that might come after
-        if(!left[0].equals(""))
-            parsedMessage.addAll(Arrays.asList(left)); //if there are any arguments in the array left they are added to the parsedMessage
-
-        parsedMessage.add(body); //adds the body to the parsedMessage
-        return parsedMessage;
-    }
 
     private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree,String body) throws NoSuchAlgorithmException, IOException {
         byte[] header = this.makeHeader(messageType,fileID,chunkNO, replicationDegree);
@@ -251,8 +274,8 @@ public class Peer {
         int bLen = msgBody.length;
         byte[] result = new byte[aLen + bLen];
 
-        System.arraycopy(header, 0, result, 0, aLen);
-        System.arraycopy(msgBody, 0, result, aLen, bLen);
+        arraycopy(header, 0, result, 0, aLen);
+        arraycopy(msgBody, 0, result, aLen, bLen);
 
         InetAddress groupToSend = null;
         Integer portToSend = null;
@@ -262,7 +285,10 @@ public class Peer {
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
-                this.replicationDegreeMap.put(fileID + "_" + chunkNO, new ArrayList<>());
+                if(this.replicationDegreeMap.get(fileID + "_" + chunkNO) == null) {
+                    this.replicationDegreeMap.put(fileID + "_" + chunkNO, new ArrayList<>());
+                    this.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
+                }
                 break;
             case "GETCHUNK":
             case "DELETE":
