@@ -18,7 +18,7 @@ public class Listener {
 
     public void startThread() throws Exception {
         this.socket.joinGroup(this.group);
-        Thread listenerThread = new Thread(() -> {
+        this.peer.threadPool.execute(() -> {
             while(true){
                 byte[] pack = new byte[64256];
                 DatagramPacket recv = new DatagramPacket(pack, pack.length);
@@ -35,6 +35,5 @@ public class Listener {
                     e.printStackTrace();
                 }
             }});
-        listenerThread.start();
     }
 }

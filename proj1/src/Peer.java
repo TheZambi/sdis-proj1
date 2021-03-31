@@ -13,6 +13,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.arraycopy;
 
@@ -21,6 +25,7 @@ public class Peer {
     HashMap<String, List<String>> replicationDegreeMap = new HashMap<>();
     HashMap<String, Integer> desiredRepDegree = new HashMap<>();
     HashMap<String, Boolean> restore = new HashMap<>();
+    ScheduledExecutorService threadPool;
 
     String protocolVersion;
     String peerID;
@@ -38,6 +43,8 @@ public class Peer {
         String multicastControl = args[3];
         String multicastData = args[4];
         String multicastRecovery = args[5];
+
+        this.threadPool = Executors.newScheduledThreadPool(15);
 
         this.controlListener = new Listener(multicastControl, this);
 
@@ -84,40 +91,33 @@ public class Peer {
         printMsg(msg.messageType, msg.peerID);
         switch(msg.messageType){
             case "PUTCHUNK":
-                if(!this.peerID.equals("1")) {
-                    Thread savingChunk = new Thread(() -> {
-                        try {
-                            this.putchunk(msg);
-                            this.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
-                            if (this.replicationDegreeMap.get(fileChunk) == null) {
-                                this.replicationDegreeMap.put(fileChunk, new ArrayList<>());
-                                this.replicationDegreeMap.get(fileChunk).add(this.peerID);
-                            }
-                            this.restore.put(fileChunk, false);
-                        } catch (Exception e) {
-                            e.printStackTrace();
+                this.threadPool.schedule(() -> {
+                    try {
+                        this.putchunk(msg);
+                        this.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
+                        if (this.replicationDegreeMap.get(fileChunk) == null) {
+                            this.replicationDegreeMap.put(fileChunk, new ArrayList<>());
+                            this.replicationDegreeMap.get(fileChunk).add(this.peerID);
                         }
-                    });
-                    savingChunk.start();
-                }
+                        this.restore.put(fileChunk, false);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
                 break;
             case "GETCHUNK":
-                Thread getChunk = new Thread(() -> {
+                this.threadPool.schedule(() -> {
 
                     try {
                         this.getchunk(msg);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
-                });
-
-                getChunk.start();
+                }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
 
                 break;
             case "DELETE":
-
-                Thread deleteChunk = new Thread(() -> {
-
+                this.threadPool.execute(() -> {
                     try {
                         this.deletechunk(msg.fileID);
                     } catch (Exception e) {
@@ -125,19 +125,16 @@ public class Peer {
                     }
                 });
 
-                deleteChunk.start();
                 break;
             case "REMOVED":
 
-                Thread removedChunk = new Thread(() -> {
+                this.threadPool.schedule(() -> {
                     try {
                         this.updateRepDegreeRemove(msg);
 
                         if(this.replicationDegreeMap.get(fileChunk)!= null && this.replicationDegreeMap.get(fileChunk).contains(this.peerID))
                             if (this.replicationDegreeMap.get(fileChunk).size() < this.desiredRepDegree.get(fileChunk)) {
                                 this.restore.put(fileChunk, true);
-                                Random rand = new Random();
-                                Thread.sleep(rand.nextInt(400));
                                 if (this.restore.get(fileChunk)) {
                                     String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + fileChunk + ".txt";
                                     Path filePath = Path.of(filename);
@@ -149,9 +146,8 @@ public class Peer {
                     }catch (Exception e){
                         e.printStackTrace();
                     }
-                });
+                }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
 
-                removedChunk.start();
                 break;
             case "STORED":
                 this.updateRepDegreeAdd(msg);
@@ -194,8 +190,6 @@ public class Peer {
         try{
             Path filePath = Path.of(filename);
             String body = Files.readString(filePath);
-            Random rand = new Random();
-            Thread.sleep(rand.nextInt(400));
             this.sendPacket("CHUNK",msg.fileID,msg.chunkNO,null,body);
         }
         catch (Exception e){
@@ -204,13 +198,9 @@ public class Peer {
     }
 
     private void putchunk(Message msg) throws Exception {
-
-
         saveChunk(msg.fileID, msg.chunkNO, msg.body);
-        Random rand = new Random();
-        Thread.sleep(rand.nextInt(400));
-        this.sendPacket("STORED",msg.fileID,msg.chunkNO,null,"");
 
+        this.sendPacket("STORED",msg.fileID,msg.chunkNO,null,"");
     }
 
     private void saveChunk(String fileID, String chunkNO, String body) throws IOException {
