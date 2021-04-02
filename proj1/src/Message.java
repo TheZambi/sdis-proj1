@@ -1,4 +1,5 @@
 import java.net.DatagramPacket;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -12,8 +13,8 @@ public class Message {
     String replicationDegree;
     byte[] body;
 
-    public Message(DatagramPacket recv) {
-        String s = new String(recv.getData()).substring(0,recv.getLength()); //ignores following \0
+    public Message(byte[] msg) {
+        String s = new String(msg, StandardCharsets.UTF_8); //ignores following \0
         String[] arr = s.split("\r\n\r\n"); //separates body from header
         String header = arr[0];
         byte[] body=null;

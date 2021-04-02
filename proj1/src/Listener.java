@@ -1,6 +1,7 @@
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+import java.util.Arrays;
 import java.util.List;
 
 public class Listener {
@@ -27,8 +28,9 @@ public class Listener {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
+                byte[] withoutLeadingZeros = Arrays.copyOf(pack, recv.getLength());
 
-                Message msg = new Message(recv);
+                Message msg = new Message(withoutLeadingZeros);
                 try {
                     this.peer.interpretMessage(msg);
                 } catch (Exception e) {

@@ -330,10 +330,9 @@ public class Peer implements RMI{
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
+
                 Set<String> set = new HashSet<>();
                 this.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
-                if(this.replicationDegreeMap.get(fileID + "_" + chunkNO) == null)
-                    System.out.println("\n\n\nboda\n\n");
                 this.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
                 break;
             case "GETCHUNK":
