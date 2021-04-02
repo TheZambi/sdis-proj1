@@ -1,6 +1,5 @@
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.lang.reflect.Array;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
@@ -9,10 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -22,10 +18,11 @@ import static java.lang.System.arraycopy;
 
 
 public class Peer {
-    HashMap<String, List<String>> replicationDegreeMap = new HashMap<>();
+    HashMap<String, Set<String>> replicationDegreeMap = new HashMap<>();
     HashMap<String, Integer> desiredRepDegree = new HashMap<>();
     HashMap<String, Boolean> restore = new HashMap<>();
     ScheduledExecutorService threadPool;
+    ScheduledExecutorService backupProtocolThreadPool;
 
     String protocolVersion;
     String peerID;
@@ -45,6 +42,7 @@ public class Peer {
         String multicastRecovery = args[5];
 
         this.threadPool = Executors.newScheduledThreadPool(15);
+        this.backupProtocolThreadPool = Executors.newScheduledThreadPool(10);
 
         this.controlListener = new Listener(multicastControl, this);
 
@@ -57,24 +55,61 @@ public class Peer {
         Peer peer = new Peer(args);
         peer.joinMulticast();
 
-        String filePath = "../peer1/" + "test1.txt";
-        String fileID = peer.makeFileID(filePath);
-        if(args[1].equals("1")) {
+        if(args[1].equals("1"))
+        {
+            peer.backup("../peer1/test1.txt",1);
+        }
+//         create instance of directory
+//        File dir = new File("../peer2/b5c31849b58e55aa2444b4114b94d995d16a54b0c60de7dade28f8e4ff10a980");
+//
+//        // create obejct of PrintWriter for output file
+//        PrintWriter pw = new PrintWriter("output.txt");
+//
+//        // Get list of all the files in form of String Array
+//        String[] fileNames = dir.list();
+//        Arrays.sort(fileNames, Comparator.comparingInt((String a) -> Integer.parseInt(a.split("_")[1].split("\\.")[0])));
+//        // loop for reading the contents of all the files
+//        // in the directory GeeksForGeeks
+//
+//        for (String fileName : fileNames) {
+//            Path fileP = Path.of("../peer2/b5c31849b58e55aa2444b4114b94d995d16a54b0c60de7dade28f8e4ff10a980/"+fileName);
+//            pw.print(new String(Files.readAllBytes(fileP)));
+//            pw.flush();
+//        }
+//        System.out.println("Reading from all files" +
+//                " in directory " + dir.getName() + " Completed");
+    }
 
-            Path fileName = Path.of(filePath);
-            String body = Files.readString(fileName);
 
-            peer.sendPutchunk(fileID, "1", "2", body);
+    public void backup(String filePath, Integer ReplicationDegree) throws Exception {
+
+        byte[] pack = new byte[64000];
+        Integer bytesRead = 0, currentChunk = 0;
+        FileInputStream fileInput = new FileInputStream(new File(filePath));
+        String fileID = this.makeFileID(filePath);
+        while ((bytesRead = fileInput.read(pack)) != -1)
+        {
+            byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
+            Integer finalCurrentChunk = currentChunk;
+            this.backupProtocolThreadPool.execute(()->
+            {
+                try {
+                    this.sendPutchunk(fileID, finalCurrentChunk.toString(), ReplicationDegree.toString(), body);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            currentChunk++;
         }
     }
 
-    private void sendPutchunk(String fileID,String chunkNO,String replicationDegree ,String body) throws Exception {
+    private void sendPutchunk(String fileID, String chunkNO, String replicationDegree, byte[] body) throws Exception {
 
         do {
             this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body);
             Thread.sleep(1000);
-        }while(this.replicationDegreeMap.get(fileID + "_" + "1").size() < this.desiredRepDegree.get(fileID + "_" + "1"));
-
+        } while (this.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
+                (this.replicationDegreeMap.get(fileID + "_" + chunkNO).size() < this.desiredRepDegree.get(fileID + "_" + chunkNO)));
     }
 
     public void printMsg(String messageType, String peerID)
@@ -95,10 +130,10 @@ public class Peer {
                     try {
                         this.putchunk(msg);
                         this.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
-                        if (this.replicationDegreeMap.get(fileChunk) == null) {
-                            this.replicationDegreeMap.put(fileChunk, new ArrayList<>());
-                            this.replicationDegreeMap.get(fileChunk).add(this.peerID);
-                        }
+
+                        this.replicationDegreeMap.put(fileChunk, new HashSet<>());
+                        this.replicationDegreeMap.get(fileChunk).add(this.peerID);
+
                         this.restore.put(fileChunk, false);
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -138,7 +173,7 @@ public class Peer {
                                 if (this.restore.get(fileChunk)) {
                                     String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + fileChunk + ".txt";
                                     Path filePath = Path.of(filename);
-                                    String body = Files.readString(filePath);
+                                    byte[] body = Files.readAllBytes(filePath);
 
                                     this.sendPutchunk(msg.fileID, msg.chunkNO, this.desiredRepDegree.get(fileChunk).toString(), body);
                                 }
@@ -189,7 +224,7 @@ public class Peer {
         String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO + ".txt";
         try{
             Path filePath = Path.of(filename);
-            String body = Files.readString(filePath);
+            byte[] body = Files.readAllBytes(filePath);
             this.sendPacket("CHUNK",msg.fileID,msg.chunkNO,null,body);
         }
         catch (Exception e){
@@ -199,11 +234,12 @@ public class Peer {
 
     private void putchunk(Message msg) throws Exception {
         saveChunk(msg.fileID, msg.chunkNO, msg.body);
+        System.out.println(msg.body);
 
-        this.sendPacket("STORED",msg.fileID,msg.chunkNO,null,"");
+        this.sendPacket("STORED",msg.fileID,msg.chunkNO,null, "".getBytes());
     }
 
-    private void saveChunk(String fileID, String chunkNO, String body) throws IOException {
+    private void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
         //fileID_chunkNO.txt
         File dir = new File("../peer" + this.peerID + "/" + fileID);
 
@@ -211,13 +247,11 @@ public class Peer {
             dir.mkdirs();
         }
 
-        String filename = dir+ "/" + fileID + "_" + chunkNO + ".txt";
+        String filename = dir+ "/" + fileID + "_" + chunkNO;
         File file = new File(filename);
         file.delete();
         if(file.createNewFile()) {
-            FileWriter writer = new FileWriter(filename);
-            writer.write(body);
-            writer.close();
+            Files.write(file.toPath(), body);
         }
     }
 
@@ -253,19 +287,15 @@ public class Peer {
         return ret.toString();
     }
 
-
-
-
-    private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree,String body) throws IOException {
+    private void sendPacket(String messageType, String fileID,String chunkNO, String replicationDegree,byte[] body) throws IOException {
         byte[] header = this.makeHeader(messageType,fileID,chunkNO, replicationDegree);
-        byte[] msgBody = body.getBytes();
 
         int aLen = header.length;
-        int bLen = msgBody.length;
+        int bLen = body.length;
         byte[] result = new byte[aLen + bLen];
 
         arraycopy(header, 0, result, 0, aLen);
-        arraycopy(msgBody, 0, result, aLen, bLen);
+        arraycopy(body, 0, result, aLen, bLen);
 
         InetAddress groupToSend = null;
         Integer portToSend = null;
@@ -275,10 +305,11 @@ public class Peer {
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
-                if(this.replicationDegreeMap.get(fileID + "_" + chunkNO) == null) {
-                    this.replicationDegreeMap.put(fileID + "_" + chunkNO, new ArrayList<>());
-                    this.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
-                }
+                Set<String> set = new HashSet<>();
+                this.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
+                if(this.replicationDegreeMap.get(fileID + "_" + chunkNO) == null)
+                    System.out.println("\n\n\nboda\n\n");
+                this.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
                 break;
             case "GETCHUNK":
             case "DELETE":

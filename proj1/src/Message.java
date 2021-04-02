@@ -10,15 +10,15 @@ public class Message {
     String fileID;
     String chunkNO;
     String replicationDegree;
-    String body;
+    byte[] body;
 
     public Message(DatagramPacket recv) {
         String s = new String(recv.getData()).substring(0,recv.getLength()); //ignores following \0
         String[] arr = s.split("\r\n\r\n"); //separates body from header
         String header = arr[0];
-        String body = "";
+        byte[] body=null;
         if(arr.length ==2)
-            body = arr[1];
+            body = arr[1].getBytes();
         String[] aux = header.split(" ",4);
         this.version = aux[0];
         this.messageType = aux[1];
