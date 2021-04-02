@@ -6,6 +6,11 @@ import java.net.MulticastSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.rmi.AlreadyBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -17,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import static java.lang.System.arraycopy;
 
 
-public class Peer {
+public class Peer implements RMI{
     HashMap<String, Set<String>> replicationDegreeMap = new HashMap<>();
     HashMap<String, Integer> desiredRepDegree = new HashMap<>();
     HashMap<String, Boolean> restore = new HashMap<>();
@@ -54,11 +59,12 @@ public class Peer {
     public static void main(String[] args) throws Exception{
         Peer peer = new Peer(args);
         peer.joinMulticast();
+        peer.setupRMI();
 
-        if(args[1].equals("1"))
-        {
-            peer.backup("../peer1/test1.txt",1);
-        }
+//        if(args[1].equals("1"))
+//        {
+//            peer.backup("../peer1/test1.txt",1);
+//        }
 //         create instance of directory
 //        File dir = new File("../peer2/b5c31849b58e55aa2444b4114b94d995d16a54b0c60de7dade28f8e4ff10a980");
 //
@@ -80,11 +86,19 @@ public class Peer {
 //                " in directory " + dir.getName() + " Completed");
     }
 
+    private void setupRMI() throws RemoteException, AlreadyBoundException {
+        RMI stub = (RMI) UnicastRemoteObject.exportObject(this,0);
+        // Bind the remote object's stub in the registry
+        Registry registry = LocateRegistry.getRegistry();
+        registry.bind(this.accessPoint, stub);
+        System.err.println("Server ready");
+    }
+
 
     public void backup(String filePath, Integer ReplicationDegree) throws Exception {
 
         byte[] pack = new byte[64000];
-        Integer bytesRead = 0, currentChunk = 0;
+        Integer bytesRead = 0, currentChunk = 0, lastBytesRead=0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
         String fileID = this.makeFileID(filePath);
         while ((bytesRead = fileInput.read(pack)) != -1)
@@ -100,6 +114,18 @@ public class Peer {
                 }
             });
             currentChunk++;
+            lastBytesRead = bytesRead;
+        }
+        if(lastBytesRead == 64000) {
+            Integer finalCurrentChunk1 = currentChunk;
+            this.backupProtocolThreadPool.execute(()->
+            {
+                try {
+                    this.sendPutchunk(fileID, finalCurrentChunk1.toString(), ReplicationDegree.toString(), "".getBytes());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
         }
     }
 
@@ -234,7 +260,6 @@ public class Peer {
 
     private void putchunk(Message msg) throws Exception {
         saveChunk(msg.fileID, msg.chunkNO, msg.body);
-        System.out.println(msg.body);
 
         this.sendPacket("STORED",msg.fileID,msg.chunkNO,null, "".getBytes());
     }
