@@ -12,6 +12,9 @@ public class TestApp {
             if (args[1].equals("BACKUP")) {
                 stub.backup(args[2], Integer.parseInt(args[3]));
             }
+            else if(args[1].equals("RESTORE")){
+                stub.restore(args[2]);
+            }
         } catch (Exception e) {
             System.err.println("Client exception: " + e.toString());
             e.printStackTrace();

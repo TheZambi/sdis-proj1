@@ -28,7 +28,7 @@ public class Listener {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-                byte[] withoutLeadingZeros = Arrays.copyOf(pack, recv.getLength());
+                byte[] withoutLeadingZeros = Arrays.copyOf(recv.getData(), recv.getLength());
 
                 Message msg = new Message(withoutLeadingZeros);
                 try {

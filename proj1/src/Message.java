@@ -14,12 +14,13 @@ public class Message {
     byte[] body;
 
     public Message(byte[] msg) {
-        String s = new String(msg, StandardCharsets.UTF_8); //ignores following \0
+        String s = new String(msg,StandardCharsets.US_ASCII); //ignores following \0
         String[] arr = s.split("\r\n\r\n"); //separates body from header
         String header = arr[0];
         byte[] body=null;
         if(arr.length ==2)
-            body = arr[1].getBytes();
+            body = arr[1].getBytes(StandardCharsets.US_ASCII);
+
         String[] aux = header.split(" ",4);
         this.version = aux[0];
         this.messageType = aux[1];
