@@ -2,7 +2,6 @@ import java.io.*;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.rmi.AlreadyBoundException;
@@ -76,7 +75,7 @@ public class Peer implements RMI {
     public void restore(String filePath) throws NoSuchAlgorithmException, IOException {
         String fileID = this.makeFileID(filePath);
         this.restoreFile.put(fileID, true);
-        this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes(StandardCharsets.US_ASCII));
+        this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes());
     }
 
     public void backup(String filePath, Integer ReplicationDegree) throws Exception {
@@ -205,7 +204,7 @@ public class Peer implements RMI {
                         this.saveFile(msg.fileID);
                     }
                     else if (this.restoreFile.get(msg.fileID)) {
-                        this.sendPacket("GETCHUNK", msg.fileID, chunkNO.toString(), null, "".getBytes(StandardCharsets.US_ASCII));
+                        this.sendPacket("GETCHUNK", msg.fileID, chunkNO.toString(), null, "".getBytes());
                     }
                 }
                 break;
@@ -216,14 +215,13 @@ public class Peer implements RMI {
     private void saveFile(String fileID) throws IOException {
         File dir = new File("../peer" + this.peerID + "/"+ fileID);
 
-        PrintWriter pw = new PrintWriter("../peer" + this.peerID + "/output.txt");
+        FileOutputStream fos = new FileOutputStream("../peer" + this.peerID + "/output.txt");
         String[] fileNames = dir.list();
         Arrays.sort(fileNames, Comparator.comparingInt((String a) -> Integer.parseInt(a.split("_")[1].split("\\.")[0])));
 
         for (String fileName : fileNames) {
-            Path fileP = Path.of("../peer" + this.peerID + "/"+ fileID+"/"+fileName);
-            pw.print(Files.readString(fileP, StandardCharsets.UTF_8));
-            pw.flush();
+            FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/"+ fileID+"/"+fileName);
+            fis.transferTo(fos);
         }
         //this.deletechunks(fileID);
     }
@@ -282,13 +280,14 @@ public class Peer implements RMI {
         }
 
         String filename = dir + "/" + fileID + "_" + chunkNO;
-        File file = new File(filename);
-        file.delete();
 
 
-        if (file.createNewFile()) {
-            Files.write(file.toPath(),body);
-        }
+        FileOutputStream fos = new FileOutputStream(filename);
+
+        System.out.println(body.length);
+        fos.write(body);
+
+        fos.close();
     }
 
     public void joinMulticast() throws Exception {
@@ -308,7 +307,7 @@ public class Peer implements RMI {
             replicationDegree = " " + repDegree;
 
         String finish = version + " " + msgType + " " + senderID + " " + fID + chunkNumber + replicationDegree + " " + '\r' + '\n' + '\r' + '\n';
-        return finish.getBytes(StandardCharsets.US_ASCII);
+        return finish.getBytes();
     }
 
     private String makeFileID(String filePath) throws NoSuchAlgorithmException {
@@ -316,7 +315,7 @@ public class Peer implements RMI {
         File f = new File(filePath);
         String absPath = f.getAbsolutePath();
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(absPath.getBytes(StandardCharsets.US_ASCII));
+        byte[] hash = digest.digest(absPath.getBytes());
         for (byte b : hash) {
             ret.append(String.format("%02x", b));
         }
@@ -342,8 +341,8 @@ public class Peer implements RMI {
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
-
-                Set<String> set = new HashSet<>();
+                Set<String> set;
+                set = new HashSet<>();
                 this.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
                 this.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
                 break;

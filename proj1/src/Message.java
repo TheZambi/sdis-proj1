@@ -1,5 +1,4 @@
 import java.net.DatagramPacket;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -14,12 +13,12 @@ public class Message {
     byte[] body;
 
     public Message(byte[] msg) {
-        String s = new String(msg,StandardCharsets.US_ASCII); //ignores following \0
+        String s = new String(msg); //ignores following \0
         String[] arr = s.split("\r\n\r\n"); //separates body from header
         String header = arr[0];
         byte[] body=null;
         if(arr.length ==2)
-            body = arr[1].getBytes(StandardCharsets.US_ASCII);
+            body = arr[1].getBytes();
 
         String[] aux = header.split(" ",4);
         this.version = aux[0];
