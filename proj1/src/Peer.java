@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 import static java.lang.System.arraycopy;
 
 
-public class Peer implements RMI {
+public class Peer implements RMI,Serializable {
     HashMap<String, Set<String>> replicationDegreeMap = new HashMap<>();
     HashMap<String, Integer> desiredRepDegree = new HashMap<>();
     HashMap<String, Boolean> restore = new HashMap<>();
@@ -36,6 +36,9 @@ public class Peer implements RMI {
     Listener controlListener;
     Listener dataListener;
     Listener recoveryListener;
+
+    //Peer State
+    HashMap<String, String> filenameToFileID = new HashMap<>();
 
     public Peer(String[] args) throws Exception {
         this.protocolVersion = args[0];
@@ -60,8 +63,43 @@ public class Peer implements RMI {
 
     public static void main(String[] args) throws Exception {
         Peer peer = new Peer(args);
+        peer.getState();
         peer.joinMulticast();
         peer.setupRMI();
+        peer.updateState();
+
+    }
+
+    private void updateState() throws IOException {
+        FileOutputStream fos = new FileOutputStream("../peer" + this.peerID + "/state.txt");
+        ObjectOutputStream oos = new ObjectOutputStream(fos);
+        oos.writeObject(this);
+//        FileWriter writer = new FileWriter("../peer" + this.peerID + "/state.txt");
+//        writer.write("BACKED UP FILES\n");
+//        for (Map.Entry<String, String> entry : this.filenameToFileID.entrySet()) {
+//            writer.write(entry.getKey());
+//            writer.write(" - ");
+//            writer.write(entry.getValue());
+//            writer.write(" - ");
+//            writer.write(this.desiredRepDegree.get(entry.getValue() + "_0"));
+//            writer.write(" - ");
+//            for (Map.Entry<String, Set<String>> entry2 : this.replicationDegreeMap.entrySet()) {
+//                if (entry2.getKey().contains(entry.getValue())) {
+//                    writer.write(entry2.getKey().split("_")[1]);
+//                    writer.write(" - ");
+//                    writer.write(entry2.getValue().toString());
+//                }
+//            }
+//        }
+//        writer.close();
+    }
+
+
+
+    private void getState() throws IOException, ClassNotFoundException {
+        FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/state.txt");
+        ObjectInputStream ois = new ObjectInputStream(fis);
+        this = (Peer)ois.readObject();
     }
 
     private void setupRMI() throws RemoteException, AlreadyBoundException {
@@ -89,6 +127,7 @@ public class Peer implements RMI {
         Integer bytesRead = 0, currentChunk = 0, lastBytesRead = 0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
         String fileID = this.makeFileID(filePath);
+        this.filenameToFileID.put(filePath,fileID);
         while ((bytesRead = fileInput.read(pack)) != -1) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
             Integer finalCurrentChunk = currentChunk;
