@@ -9,15 +9,23 @@ public class TestApp {
         try {
             Registry registry = LocateRegistry.getRegistry();
             RMI stub = (RMI) registry.lookup(args[0]);
-            if (args[1].equals("BACKUP")) {
-                stub.backup(args[2], Integer.parseInt(args[3]));
+            switch (args[1]) {
+                case "BACKUP":
+                    stub.backup(args[2], Integer.parseInt(args[3]));
+                    break;
+                case "RESTORE":
+                    stub.restore(args[2]);
+                    break;
+                case "DELETE":
+                    stub.delete(args[2]);
+                    break;
+                case "STATE":
+                    stub.state();
+                    break;
+                default:
+                    System.out.println("No method found for: " + args[1]);
             }
-            else if(args[1].equals("RESTORE")){
-                stub.restore(args[2]);
-            }
-            else if(args[1].equals("DELETE")){
-                stub.delete(args[2]);
-            }
+
         } catch (Exception e) {
             System.err.println("Client exception: " + e.toString());
             e.printStackTrace();

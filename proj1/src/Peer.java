@@ -38,8 +38,6 @@ public class Peer implements RMI {
     Listener dataListener;
     Listener recoveryListener;
 
-    //Peer State
-
     public Peer(String[] args) throws Exception {
         this.protocolVersion = args[0];
         this.peerID = args[1];
@@ -74,7 +72,6 @@ public class Peer implements RMI {
 
     public static void main(String[] args) throws Exception {
         Peer peer = new Peer(args);
-//        peer.getState();
         peer.joinMulticast();
         peer.setupRMI();
 
@@ -119,6 +116,34 @@ public class Peer implements RMI {
     public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
         String fileID = this.makeFileID(filePath);
         this.sendPacket("DELETE", fileID, null, null, "".getBytes());
+    }
+
+//    For each file whose backup it has initiated:
+    //    The file pathname
+    //    The backup service id of the file
+    //    The desired replication degree
+    //    For each chunk of the file:
+    //    Its id
+    //    Its perceived replication degree
+    public void state() throws RemoteException{
+        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
+            System.out.println("FILES WHOSE BACKUP I INITIATED");
+            System.out.print("File path: " + entry.getKey());
+            System.out.print(" - ");
+            System.out.print("File ID: " + entry.getValue());
+            System.out.print(" - ");
+            System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getValue() + "_0"));
+            System.out.print(" - ");
+            for (Map.Entry<String, Set<String>> entry2 : this.state.replicationDegreeMap.entrySet()) {
+                if (entry2.getKey().contains(entry.getValue())) {
+                    System.out.print("\n");
+                    System.out.print("\tChunk number: " + entry2.getKey().split("_")[1]);
+                    System.out.print(" - ");
+                    System.out.print(" Is saved on the following peers: " + entry2.getValue().toString());
+                }
+            }
+        }
+
     }
 
     public void backup(String filePath, Integer ReplicationDegree) throws Exception {
@@ -220,7 +245,7 @@ public class Peer implements RMI {
                         this.threadPool.schedule(() -> {
                             try {
                                 if (this.restore.get(fileChunk)) {
-                                    String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + fileChunk + ".txt";
+                                    String filename = "../peer" + this.peerID + "/chunks/" + msg.fileID + "/" + fileChunk + ".txt";
                                     Path filePath = Path.of(filename);
                                     byte[] body = Files.readAllBytes(filePath);
 
@@ -256,17 +281,21 @@ public class Peer implements RMI {
     }
 
     private void saveFile(String fileID) throws IOException {
-        File dir = new File("../peer" + this.peerID + "/"+ fileID);
+        File dir = new File("../peer" + this.peerID + "/chunks/"+ fileID);
 
         FileOutputStream fos = new FileOutputStream("../peer" + this.peerID + "/output.txt");
         String[] fileNames = dir.list();
         Arrays.sort(fileNames, Comparator.comparingInt((String a) -> Integer.parseInt(a.split("_")[1].split("\\.")[0])));
 
         for (String fileName : fileNames) {
-            FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/"+ fileID+"/"+fileName);
+            FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/chunks/"+ fileID+"/"+fileName);
             fis.transferTo(fos);
+            fis.close();
         }
+        fos.close();
+
         this.deletechunks(fileID);
+
     }
 
     private void updateRepDegreeAdd(Message msg) {
@@ -285,8 +314,7 @@ public class Peer implements RMI {
 
     private void deletechunks(String fileID) {
 
-        File file = new File("../peer" + this.peerID + "/" + fileID);
-
+        File file = new File("../peer" + this.peerID + "/chunks/" + fileID);
         File[] contents = file.listFiles();
         if (contents != null) {
             for (File f : contents) {
@@ -297,7 +325,7 @@ public class Peer implements RMI {
     }
 
     private void getchunk(Message msg) {
-        String filename = "../peer" + this.peerID + "/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO;
+        String filename = "../peer" + this.peerID + "/chunks/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO;
         try {
             Path filePath = Path.of(filename);
             byte[] body = Files.readAllBytes(filePath);
@@ -316,7 +344,7 @@ public class Peer implements RMI {
 
     private void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
         //fileID_chunkNO.txt
-        File dir = new File("../peer" + this.peerID + "/" + fileID);
+        File dir = new File("../peer" + this.peerID + "/chunks/" + fileID);
 
         if (!dir.exists()) {
             dir.mkdirs();
