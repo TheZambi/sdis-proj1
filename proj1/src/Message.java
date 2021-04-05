@@ -1,3 +1,4 @@
+import java.lang.reflect.Array;
 import java.net.DatagramPacket;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,10 +16,11 @@ public class Message {
     public Message(byte[] msg) {
         String s = new String(msg); //ignores following \0
         String[] arr = s.split("\r\n\r\n"); //separates body from header
+        Integer index = s.indexOf("\r\n\r\n") + 4;
         String header = arr[0];
         byte[] body=null;
         if(arr.length ==2)
-            body = arr[1].getBytes();
+            body = Arrays.copyOfRange(msg, index, msg.length);;
 
         String[] aux = header.split(" ",4);
         this.version = aux[0];
