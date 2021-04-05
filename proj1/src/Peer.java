@@ -17,11 +17,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.arraycopy;
+import static java.lang.System.setOut;
 
 
-public class Peer implements RMI,Serializable {
-    HashMap<String, Set<String>> replicationDegreeMap = new HashMap<>();
-    HashMap<String, Integer> desiredRepDegree = new HashMap<>();
+public class Peer implements RMI {
+    PeerState state = null;
+
     HashMap<String, Boolean> restore = new HashMap<>();
     HashMap<String, Boolean> restoreFile = new HashMap<>();
     ScheduledExecutorService threadPool;
@@ -38,7 +39,6 @@ public class Peer implements RMI,Serializable {
     Listener recoveryListener;
 
     //Peer State
-    HashMap<String, String> filenameToFileID = new HashMap<>();
 
     public Peer(String[] args) throws Exception {
         this.protocolVersion = args[0];
@@ -59,48 +59,48 @@ public class Peer implements RMI,Serializable {
         this.dataListener = new Listener(multicastData, this);
 
         this.recoveryListener = new Listener(multicastRecovery, this);
+
+
+        try {
+            FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/state.txt");
+            ObjectInputStream ois = new ObjectInputStream(fis);
+            this.state = (PeerState) ois.readObject();
+        }catch (FileNotFoundException e)
+        {
+            System.out.println("No previous state found, starting a new one");;
+            this.state = new PeerState();
+        }
     }
 
     public static void main(String[] args) throws Exception {
         Peer peer = new Peer(args);
-        peer.getState();
+//        peer.getState();
         peer.joinMulticast();
         peer.setupRMI();
-        peer.updateState();
+
+        peer.threadPool.scheduleAtFixedRate(() ->{
+            try {
+                peer.updateState();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }, 1, 5, TimeUnit.SECONDS);
 
     }
 
     private void updateState() throws IOException {
         FileOutputStream fos = new FileOutputStream("../peer" + this.peerID + "/state.txt");
         ObjectOutputStream oos = new ObjectOutputStream(fos);
-        oos.writeObject(this);
-//        FileWriter writer = new FileWriter("../peer" + this.peerID + "/state.txt");
-//        writer.write("BACKED UP FILES\n");
-//        for (Map.Entry<String, String> entry : this.filenameToFileID.entrySet()) {
-//            writer.write(entry.getKey());
-//            writer.write(" - ");
-//            writer.write(entry.getValue());
-//            writer.write(" - ");
-//            writer.write(this.desiredRepDegree.get(entry.getValue() + "_0"));
-//            writer.write(" - ");
-//            for (Map.Entry<String, Set<String>> entry2 : this.replicationDegreeMap.entrySet()) {
-//                if (entry2.getKey().contains(entry.getValue())) {
-//                    writer.write(entry2.getKey().split("_")[1]);
-//                    writer.write(" - ");
-//                    writer.write(entry2.getValue().toString());
-//                }
-//            }
-//        }
-//        writer.close();
+        oos.writeObject(this.state);
     }
 
 
 
-    private void getState() throws IOException, ClassNotFoundException {
-        FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/state.txt");
-        ObjectInputStream ois = new ObjectInputStream(fis);
-        this = (Peer)ois.readObject();
-    }
+//    private void getState() throws IOException, ClassNotFoundException {
+//        FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/state.txt");
+//        ObjectInputStream ois = new ObjectInputStream(fis);
+//        this = (Peer)ois.readObject();
+//    }
 
     private void setupRMI() throws RemoteException, AlreadyBoundException {
         RMI stub = (RMI) UnicastRemoteObject.exportObject(this, 0);
@@ -127,7 +127,7 @@ public class Peer implements RMI,Serializable {
         Integer bytesRead = 0, currentChunk = 0, lastBytesRead = 0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
         String fileID = this.makeFileID(filePath);
-        this.filenameToFileID.put(filePath,fileID);
+        this.state.filenameToFileID.put(filePath,fileID);
         while ((bytesRead = fileInput.read(pack)) != -1) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
             Integer finalCurrentChunk = currentChunk;
@@ -160,8 +160,8 @@ public class Peer implements RMI,Serializable {
         do {
             this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body);
             Thread.sleep(1000);
-        } while (this.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
-                (this.replicationDegreeMap.get(fileID + "_" + chunkNO).size() < this.desiredRepDegree.get(fileID + "_" + chunkNO)));
+        } while (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
+                (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO).size() < this.state.desiredRepDegree.get(fileID + "_" + chunkNO)));
     }
 
     public void printMsg(String messageType, String peerID) {
@@ -180,10 +180,10 @@ public class Peer implements RMI,Serializable {
                 this.threadPool.schedule(() -> {
                     try {
                         this.putchunk(msg);
-                        this.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
+                        this.state.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
 
-                        this.replicationDegreeMap.put(fileChunk, new HashSet<>());
-                        this.replicationDegreeMap.get(fileChunk).add(this.peerID);
+                        this.state.replicationDegreeMap.put(fileChunk, new HashSet<>());
+                        this.state.replicationDegreeMap.get(fileChunk).add(this.peerID);
 
                         this.restore.put(fileChunk, false);
                     } catch (Exception e) {
@@ -213,9 +213,9 @@ public class Peer implements RMI,Serializable {
 
                 break;
             case "REMOVED":
-                if (this.replicationDegreeMap.get(fileChunk) != null && this.replicationDegreeMap.get(fileChunk).contains(this.peerID)) {
+                if (this.state.replicationDegreeMap.get(fileChunk) != null && this.state.replicationDegreeMap.get(fileChunk).contains(this.peerID)) {
                     this.updateRepDegreeRemove(msg);
-                    if (this.replicationDegreeMap.get(fileChunk).size() < this.desiredRepDegree.get(fileChunk)) {
+                    if (this.state.replicationDegreeMap.get(fileChunk).size() < this.state.desiredRepDegree.get(fileChunk)) {
                         this.restore.put(fileChunk, true);
                         this.threadPool.schedule(() -> {
                             try {
@@ -224,7 +224,7 @@ public class Peer implements RMI,Serializable {
                                     Path filePath = Path.of(filename);
                                     byte[] body = Files.readAllBytes(filePath);
 
-                                    this.sendPutchunk(msg.fileID, msg.chunkNO, this.desiredRepDegree.get(fileChunk).toString(), body);
+                                    this.sendPutchunk(msg.fileID, msg.chunkNO, this.state.desiredRepDegree.get(fileChunk).toString(), body);
                                 }
 
                             } catch (Exception e) {
@@ -272,15 +272,15 @@ public class Peer implements RMI,Serializable {
     private void updateRepDegreeAdd(Message msg) {
         String file = msg.fileID + "_" + msg.chunkNO;
 
-        if (this.replicationDegreeMap.get(file) != null) {
-            this.replicationDegreeMap.get(file).add(msg.peerID);
+        if (this.state.replicationDegreeMap.get(file) != null) {
+            this.state.replicationDegreeMap.get(file).add(msg.peerID);
         }
     }
 
     private void updateRepDegreeRemove(Message msg) {
         String file = msg.fileID + "_" + msg.chunkNO;
-        if (this.replicationDegreeMap.get(file) != null)
-            this.replicationDegreeMap.get(file).remove(msg.peerID);
+        if (this.state.replicationDegreeMap.get(file) != null)
+            this.state.replicationDegreeMap.get(file).remove(msg.peerID);
     }
 
     private void deletechunks(String fileID) {
@@ -383,10 +383,9 @@ public class Peer implements RMI,Serializable {
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
-                Set<String> set;
-                set = new HashSet<>();
-                this.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
-                this.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
+                Set<String> set = new HashSet<>();
+                this.state.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
+                this.state.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
                 break;
             case "GETCHUNK":
             case "DELETE":
