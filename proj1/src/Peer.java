@@ -25,6 +25,7 @@ public class Peer implements RMI {
 
     HashMap<String, Boolean> restore = new HashMap<>();
     HashMap<String, Boolean> restoreFile = new HashMap<>();
+    HashMap<String, Boolean> getChunkMap = new HashMap<>();
     ScheduledExecutorService threadPool;
     ScheduledExecutorService backupProtocolThreadPool;
 
@@ -161,13 +162,13 @@ public class Peer implements RMI {
         }
     }
 
-    public void backup(String filePath, Integer ReplicationDegree) throws Exception {
-
+    public void backup(String fileName, Integer ReplicationDegree) throws Exception {
+        String filePath = "../peer" + this.peerID + "/" + fileName;
         byte[] pack = new byte[64000];
-        Integer bytesRead = 0, currentChunk = 0, lastBytesRead = 0;
+        Integer bytesRead, currentChunk = 0, lastBytesRead = 0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
-        String fileID = this.makeFileID(filePath);
-        this.state.filenameToFileID.put(filePath,fileID);
+        String fileID = this.makeFileID(fileName);
+        this.state.filenameToFileID.put(fileName,fileID);
         while ((bytesRead = fileInput.read(pack)) != -1) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
             Integer finalCurrentChunk = currentChunk;
@@ -224,6 +225,7 @@ public class Peer implements RMI {
 
                         this.state.replicationDegreeMap.put(fileChunk, new HashSet<>());
                         this.state.replicationDegreeMap.get(fileChunk).add(this.peerID);
+                        this.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,false);
 
                         this.restore.put(fileChunk, false);
                     } catch (Exception e) {
@@ -232,12 +234,14 @@ public class Peer implements RMI {
                 }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
                 break;
             case "GETCHUNK":
+                this.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,true);
                 this.threadPool.schedule(() -> {
-
-                    try {
-                        this.getchunk(msg);
-                    } catch (Exception e) {
-                        e.printStackTrace();
+                    if(this.getChunkMap.get(msg.fileID+"_"+msg.chunkNO) != null && this.getChunkMap.get(msg.fileID+"_"+msg.chunkNO)) {
+                        try {
+                            this.getchunk(msg);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
                 }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
 
@@ -278,6 +282,7 @@ public class Peer implements RMI {
                 this.updateRepDegreeAdd(msg);
                 break;
             case "CHUNK":
+                this.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,false);
                 this.lastChunkReceivedSize = msg.body.length;
                 this.saveChunk(msg.fileID, msg.chunkNO, msg.body);
                 Integer chunkNO = Integer.parseInt(msg.chunkNO) + 1;
