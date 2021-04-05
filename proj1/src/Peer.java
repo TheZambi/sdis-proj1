@@ -200,7 +200,6 @@ public class Peer implements RMI {
                 break;
             case "CHUNK":
                 this.lastChunkReceivedSize = msg.body.length;
-                System.out.println("received chunk with size: "+ this.lastChunkReceivedSize);
                 this.saveChunk(msg.fileID, msg.chunkNO, msg.body);
                 Integer chunkNO = Integer.parseInt(msg.chunkNO) + 1;
                 if (this.restoreFile.get(msg.fileID) != null) {
@@ -289,7 +288,6 @@ public class Peer implements RMI {
 
         FileOutputStream fos = new FileOutputStream(filename);
 
-        System.out.println(body.length);
         fos.write(body);
 
         fos.close();
