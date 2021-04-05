@@ -126,24 +126,39 @@ public class Peer implements RMI {
     //    Its id
     //    Its perceived replication degree
     public void state() throws RemoteException{
+        System.out.println("FILES WHOSE BACKUP I INITIATED");
         for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
-            System.out.println("FILES WHOSE BACKUP I INITIATED");
             System.out.print("File path: " + entry.getKey());
             System.out.print(" - ");
             System.out.print("File ID: " + entry.getValue());
             System.out.print(" - ");
             System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getValue() + "_0"));
-            System.out.print(" - ");
             for (Map.Entry<String, Set<String>> entry2 : this.state.replicationDegreeMap.entrySet()) {
                 if (entry2.getKey().contains(entry.getValue())) {
                     System.out.print("\n");
                     System.out.print("\tChunk number: " + entry2.getKey().split("_")[1]);
                     System.out.print(" - ");
-                    System.out.print(" Is saved on the following peers: " + entry2.getValue().toString());
+                    System.out.print("Is saved on the following peers: " + entry2.getValue().toString());
                 }
             }
         }
-
+        System.out.println("\nFILES THAT I HAVE BACKED UP");
+        File file = new File("../peer" + this.peerID + "/chunks");
+        File[] contents = file.listFiles();
+        if (contents != null) {
+            for (File f : contents) {
+                File[] chunks = f.listFiles();
+                for(File c : chunks) {
+                    System.out.print("Chunk ID: " + c.getName());
+                    System.out.print(" - ");
+                    System.out.print("Chunk Size: " + file.length() / 1024 + " kb");
+                    System.out.print(" - ");
+                    System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(c.getName()));
+                    System.out.print(" - ");
+                    System.out.println("Is saved on the following peers: " + this.state.replicationDegreeMap.get(c.getName()).toString());
+                }
+            }
+        }
     }
 
     public void backup(String filePath, Integer ReplicationDegree) throws Exception {
