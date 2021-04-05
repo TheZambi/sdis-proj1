@@ -78,6 +78,11 @@ public class Peer implements RMI {
         this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes());
     }
 
+    public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
+        String fileID = this.makeFileID(filePath);
+        this.sendPacket("DELETE", fileID, null, null, "".getBytes());
+    }
+
     public void backup(String filePath, Integer ReplicationDegree) throws Exception {
 
         byte[] pack = new byte[64000];

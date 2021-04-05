@@ -15,6 +15,9 @@ public class TestApp {
             else if(args[1].equals("RESTORE")){
                 stub.restore(args[2]);
             }
+            else if(args[1].equals("DELETE")){
+                stub.delete(args[2]);
+            }
         } catch (Exception e) {
             System.err.println("Client exception: " + e.toString());
             e.printStackTrace();
