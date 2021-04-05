@@ -228,7 +228,7 @@ public class Peer implements RMI {
             FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/"+ fileID+"/"+fileName);
             fis.transferTo(fos);
         }
-        //this.deletechunks(fileID);
+        this.deletechunks(fileID);
     }
 
     private void updateRepDegreeAdd(Message msg) {

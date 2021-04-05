@@ -1,4 +1,4 @@
 .idea
-src/*.class
+*/src/*.class
 g04.iml
 out/
