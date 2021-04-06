@@ -22,6 +22,9 @@ public class TestApp {
                 case "STATE":
                     stub.state();
                     break;
+                case "RECLAIM":
+                    stub.reclaim(Integer.parseInt(args[2]));
+                    break;
                 default:
                     System.out.println("No method found for: " + args[1]);
             }
