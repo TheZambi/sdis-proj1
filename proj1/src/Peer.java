@@ -477,8 +477,10 @@ public class Peer implements RMI {
         StringBuilder ret = new StringBuilder();
         File f = new File(filePath);
         String absPath = f.getAbsolutePath();
+        String lastModified = String.valueOf(f.lastModified());
+        String result = absPath+lastModified;
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(absPath.getBytes());
+        byte[] hash = digest.digest(result.getBytes());
         for (byte b : hash) {
             ret.append(String.format("%02x", b));
         }
