@@ -18,32 +18,34 @@ public class MessageInterpreter {
     }
     
     public void interpretMessage(Message msg) throws Exception {
-        //Ignore own messages
-        if (msg.peerID.equals(this.peer.peerID))
-            return;
+        synchronized (this.peer.state) {
+            //Ignore own messages
+            if (msg.peerID.equals(this.peer.peerID))
+                return;
 
-        String fileChunk = msg.fileID + "_" + msg.chunkNO;
-        this.printMsg(msg.messageType, msg.peerID);
-        switch (msg.messageType) {
-            case "PUTCHUNK":
-                this.processPutChunk(fileChunk, msg);
-                break;
-            case "GETCHUNK":
-                this.processGetChunk(msg);
-                break;
-            case "DELETE":
-                this.processDeleteChunk(msg);
-                break;
-            case "REMOVED":
-                this.processRemoveChunk(fileChunk, msg);
-                break;
-            case "STORED":
-                this.peer.updateRepDegreeAdd(msg);
-                break;
-            case "CHUNK":
-                this.processChunk(msg);
-                break;
+            String fileChunk = msg.fileID + "_" + msg.chunkNO;
+            this.printMsg(msg.messageType, msg.peerID);
+            switch (msg.messageType) {
+                case "PUTCHUNK":
+                    this.processPutChunk(fileChunk, msg);
+                    break;
+                case "GETCHUNK":
+                    this.processGetChunk(msg);
+                    break;
+                case "DELETE":
+                    this.processDeleteChunk(msg);
+                    break;
+                case "REMOVED":
+                    this.processRemoveChunk(fileChunk, msg);
+                    break;
+                case "STORED":
+                    this.peer.updateRepDegreeAdd(msg);
+                    break;
+                case "CHUNK":
+                    this.processChunk(msg);
+                    break;
 
+            }
         }
     }
 

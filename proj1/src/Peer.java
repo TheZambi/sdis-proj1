@@ -507,9 +507,10 @@ public class Peer implements RMI {
                 this.state.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
             }
             this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body, createEntry);
-            Thread.sleep(1000);
+            Thread.sleep((long) Math.pow(2, nTries)*1000);
             nTries++;
-
+            if(nTries > 5)
+                break;
         } while (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
                 this.state.desiredRepDegree.get(fileID + "_" + chunkNO) == null ||
                 this.state.replicationDegreeMap.get(fileID + "_" + chunkNO).size() < this.state.desiredRepDegree.get(fileID + "_" + chunkNO));
