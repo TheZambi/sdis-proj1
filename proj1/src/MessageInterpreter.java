@@ -18,32 +18,34 @@ public class MessageInterpreter {
     }
     
     public void interpretMessage(Message msg) throws Exception {
-        //Ignore own messages
-        if (msg.peerID.equals(this.peer.peerID))
-            return;
+        synchronized (this.peer.state) {
+            //Ignore own messages
+            if (msg.peerID.equals(this.peer.peerID))
+                return;
 
-        String fileChunk = msg.fileID + "_" + msg.chunkNO;
-        this.printMsg(msg.messageType, msg.peerID);
-        switch (msg.messageType) {
-            case "PUTCHUNK":
-                this.processPutChunk(fileChunk,msg);
-                break;
-            case "GETCHUNK":
-                this.processGetChunk(msg);
-                break;
-            case "DELETE":
-                this.processDeleteChunk(msg);
-                break;
-            case "REMOVED":
-                this.processRemoveChunk(fileChunk,msg);
-                break;
-            case "STORED":
-                this.peer.updateRepDegreeAdd(msg);
-                break;
-            case "CHUNK":
-                this.processChunk(msg);
-                break;
+            String fileChunk = msg.fileID + "_" + msg.chunkNO;
+            this.printMsg(msg.messageType, msg.peerID);
+            switch (msg.messageType) {
+                case "PUTCHUNK":
+                    this.processPutChunk(fileChunk, msg);
+                    break;
+                case "GETCHUNK":
+                    this.processGetChunk(msg);
+                    break;
+                case "DELETE":
+                    this.processDeleteChunk(msg);
+                    break;
+                case "REMOVED":
+                    this.processRemoveChunk(fileChunk, msg);
+                    break;
+                case "STORED":
+                    this.peer.updateRepDegreeAdd(msg);
+                    break;
+                case "CHUNK":
+                    this.processChunk(msg);
+                    break;
 
+            }
         }
     }
 
@@ -62,33 +64,44 @@ public class MessageInterpreter {
         }
     }
 
-    private void processRemoveChunk(String fileChunk, Message msg) {
+    private void processRemoveChunk(String fileChunk, Message msg) throws Exception {
         //REMOVE FROM MAP THE PEER WHO REMOVED CHUNK
-        if (this.peer.state.replicationDegreeMap.get(fileChunk) != null) {
-            this.peer.updateRepDegreeRemove(msg);
-            //IF I HAVE THE REMOVED CHUNK
-            if(this.peer.state.replicationDegreeMap.get(fileChunk).contains(this.peer.peerID)) {
-                //FELL BELOW REP DEGREE
-                if (this.peer.state.replicationDegreeMap.get(fileChunk).size() < this.peer.state.desiredRepDegree.get(fileChunk)) {
-                    this.peer.restore.put(fileChunk, true);
-                    this.peer.threadPool.schedule(() -> {
-                        try {
-                            //IF I AM THE ONE CALLING PUTCHUNK
-                            if (this.peer.restore.get(fileChunk)) {
-                                String filename = this.peer.chunkDir + "/" + msg.fileID + "/" + fileChunk;
-                                Path filePath = Path.of(filename);
-                                byte[] body = Files.readAllBytes(filePath);
+            if (this.peer.state.replicationDegreeMap.get(fileChunk) != null) {
+                this.peer.updateRepDegreeRemove(msg);
+                //IF I HAVE THE REMOVED CHUNK
+                if (this.peer.state.replicationDegreeMap.get(fileChunk).contains(this.peer.peerID)) {
+                    //FELL BELOW REP DEGREE
+                    if (this.peer.state.replicationDegreeMap.get(fileChunk).size() < this.peer.state.desiredRepDegree.get(fileChunk)) {
+                        this.peer.restore.put(fileChunk, true);
+                        this.peer.threadPool.schedule(() -> {
+                            try {
+                                //IF I AM THE ONE CALLING PUTCHUNK
+                                if (this.peer.restore.get(fileChunk)) {
+                                    String filename = this.peer.chunkDir + "/" + msg.fileID + "/" + fileChunk;
+                                    Path filePath = Path.of(filename);
+                                    byte[] body = Files.readAllBytes(filePath);
 
-                                this.peer.sendPutchunk(msg.fileID, msg.chunkNO, this.peer.state.desiredRepDegree.get(fileChunk).toString(), body, false);
+                                    this.peer.sendPutchunk(msg.fileID, msg.chunkNO, this.peer.state.desiredRepDegree.get(fileChunk).toString(), body, false);
+                                }
+
+                            } catch (Exception e) {
+                                e.printStackTrace();
                             }
-
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
+                        }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
+                    }
+                }
+                else if(this.peer.state.filenameToFileID.get(msg.fileID) != null){
+                    if(this.peer.state.replicationDegreeMap.get(fileChunk).size() == 0){
+                        this.peer.backupProtocolThreadPool.execute(() -> {
+                            try {
+                                this.peer.backupLostChunk(msg.fileID, Integer.parseInt(msg.chunkNO));
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        });
+                    }
                 }
             }
-        }
     }
 
     private void processDeleteChunk(Message msg) {
@@ -117,25 +130,25 @@ public class MessageInterpreter {
     }
 
     private void processPutChunk(String fileChunk,Message msg) {
-        if(this.peer.state.filenameToFileID.get(msg.fileID) == null) {
+            if (this.peer.state.filenameToFileID.get(msg.fileID) == null) {
 
-            this.peer.state.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
+                this.peer.state.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
 
-            this.peer.state.replicationDegreeMap.computeIfAbsent(fileChunk, k -> new HashSet<>());
+                this.peer.state.replicationDegreeMap.computeIfAbsent(fileChunk, k -> new HashSet<>());
 
-            this.peer.state.replicationDegreeMap.get(fileChunk).add(this.peer.peerID);
+                this.peer.state.replicationDegreeMap.get(fileChunk).add(this.peer.peerID);
 
-            this.peer.threadPool.schedule(() -> {
-                try {
-                    if (this.peer.state.maxSize == -1 || this.peer.state.currentSize + (msg.body.length / 1000) < this.peer.state.maxSize) {
-                        this.peer.putchunk(msg);
-                        this.peer.restore.put(fileChunk, false);
-                        this.peer.getChunkMap.put(msg.fileID + "_" + msg.chunkNO, false);
+                this.peer.threadPool.schedule(() -> {
+                    try {
+                        if (this.peer.state.maxSize == -1 || this.peer.state.currentSize + (msg.body.length / 1000) < this.peer.state.maxSize) {
+                            this.peer.putchunk(msg);
+                            this.peer.restore.put(fileChunk, false);
+                            this.peer.getChunkMap.put(msg.fileID + "_" + msg.chunkNO, false);
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
-        }
+                }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
+            }
     }
 }
