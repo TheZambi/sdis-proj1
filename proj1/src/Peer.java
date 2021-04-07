@@ -51,7 +51,7 @@ public class Peer implements RMI {
 
 
         this.threadPool = Executors.newScheduledThreadPool(15);
-        this.backupProtocolThreadPool = Executors.newScheduledThreadPool(10);
+        this.backupProtocolThreadPool = Executors.newScheduledThreadPool(5);
 
         this.controlListener = new Listener(multicastControl, this);
 
