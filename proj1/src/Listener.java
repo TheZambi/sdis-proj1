@@ -9,9 +9,11 @@ public class Listener {
     Integer port;
     MulticastSocket socket;
     Peer peer;
+    MessageInterpreter messageInterpreter;
 
     public Listener(String multicastInfo, Peer peer) throws Exception {
         this.peer = peer;
+        this.messageInterpreter = new MessageInterpreter(peer);
         this.group = InetAddress.getByName(multicastInfo.split(":")[0]);
         this.port = Integer.parseInt(multicastInfo.split(":")[1]);
         this.socket = new MulticastSocket(this.port);
@@ -32,7 +34,7 @@ public class Listener {
 
                 Message msg = new Message(withoutLeadingZeros);
                 try {
-                    this.peer.interpretMessage(msg);
+                    this.messageInterpreter.interpretMessage(msg);
                 } catch (Exception e) {
                     e.printStackTrace();
                 }

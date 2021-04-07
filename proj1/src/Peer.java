@@ -20,6 +20,9 @@ import static java.lang.System.arraycopy;
 
 
 public class Peer implements RMI {
+    String stateFile;
+    String chunkDir;
+    String peerDir;
     PeerState state;
 
     HashMap<String, Boolean> restore = new HashMap<>();
@@ -32,7 +35,6 @@ public class Peer implements RMI {
     String peerID;
     String accessPoint;
 
-    Integer lastChunkReceivedSize;
 
     Listener controlListener;
     Listener dataListener;
@@ -47,7 +49,6 @@ public class Peer implements RMI {
         String multicastData = args[4];
         String multicastRecovery = args[5];
 
-        this.lastChunkReceivedSize = 0;
 
         this.threadPool = Executors.newScheduledThreadPool(15);
         this.backupProtocolThreadPool = Executors.newScheduledThreadPool(10);
@@ -58,14 +59,23 @@ public class Peer implements RMI {
 
         this.recoveryListener = new Listener(multicastRecovery, this);
 
-        File peer = new File("../peer" + this.peerID);
+        this.peerDir = "../peer" + this.peerID;
+        this.chunkDir = this.peerDir + "/chunks";
+        this.stateFile = this.peerDir + "/state.txt";
+
+        File peer = new File(this.peerDir);
         if(!peer.exists())
-            peer.mkdir();
+            if(!peer.mkdir()){
+                System.out.println("Error creating peer directory");
+                return;
+            }
 
         try {
-            FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/state.txt");
+            FileInputStream fis = new FileInputStream(this.stateFile);
             ObjectInputStream ois = new ObjectInputStream(fis);
             this.state = (PeerState)ois.readObject();
+            fis.close();
+            ois.close();
         }catch (FileNotFoundException e)
         {
             System.out.println("No previous state found, starting a new one");
@@ -73,7 +83,7 @@ public class Peer implements RMI {
         }
 
         long currentSize = 0;
-        File file = new File("../peer" + this.peerID + "/chunks");
+        File file = new File(this.chunkDir);
         File[] contents = file.listFiles();
         if (contents != null) {
             for (File f : contents) {
@@ -104,12 +114,13 @@ public class Peer implements RMI {
     }
 
     private void updateState() throws IOException {
-        FileOutputStream fos = new FileOutputStream("../peer" + this.peerID + "/state.txt");
+        FileOutputStream fos = new FileOutputStream(this.stateFile);
         ObjectOutputStream oos = new ObjectOutputStream(fos);
         oos.writeObject(this.state);
+        oos.close();
+        fos.close();
+
     }
-
-
 
     private void setupRMI() throws RemoteException, AlreadyBoundException {
         RMI stub = (RMI) UnicastRemoteObject.exportObject(this, 0);
@@ -119,107 +130,19 @@ public class Peer implements RMI {
         System.err.println("Server ready");
     }
 
-    public void restore(String filePath) throws NoSuchAlgorithmException, IOException {
-        String fileID = this.makeFileID(filePath);
-        this.restoreFile.put(fileID, true);
-        this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes(), false);
+    public void joinMulticast() throws Exception {
+        this.controlListener.startThread();
+        this.dataListener.startThread();
+        this.recoveryListener.startThread();
     }
 
-    public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
-        String fileID = this.makeFileID(filePath);
-        this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
-    }
 
-    public void reclaim(Integer maxSize) throws IOException {
-        this.state.maxSize = maxSize;
-        System.out.println(this.state.maxSize);
-        List<List<String>> filenameToExcessReplicationDegree = new ArrayList<>();
-        if(this.state.currentSize > this.state.maxSize){
-            File file = new File("../peer" + this.peerID + "/chunks");
-            File[] contents = file.listFiles();
-            if (contents != null) {
-                for (File f : contents) {
-                    File[] chunks = f.listFiles();
-                    if (chunks != null) {
-                        for (File c : chunks) {
-                            int excessRepDegree = this.state.replicationDegreeMap.get(c.getName()).size() - this.state.desiredRepDegree.get(c.getName());
-                            List<String> aux = new ArrayList<>();
-                            aux.add(c.getName());
-                            aux.add(Integer.toString(excessRepDegree));
-                            aux.add(String.valueOf(c.length()));
-                            filenameToExcessReplicationDegree.add(aux);
-                        }
-                    }
-                }
-            }
-
-            filenameToExcessReplicationDegree.sort(Comparator.comparingInt((List<String> a) -> Integer.parseInt(a.get(1))));
-            Collections.reverse(filenameToExcessReplicationDegree);
-
-            int currentIndex = 0;
-            while(this.state.currentSize > this.state.maxSize && currentIndex < filenameToExcessReplicationDegree.size()){
-                String fileID = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[0];
-                String chunkNo = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[1];
-                this.sendPacket("REMOVED",fileID,chunkNo,null,"".getBytes(), false);
-                this.state.currentSize -= Long.parseLong(filenameToExcessReplicationDegree.get(currentIndex).get(2)) / 1000;
-                File toDelete = new File("../peer" + this.peerID + "/chunks/" + fileID + "/" + filenameToExcessReplicationDegree.get(currentIndex).get(0));
-                toDelete.delete();
-                currentIndex++;
-            }
-        }
-
-    }
-
-//    For each file whose backup it has initiated:
-    //    The file pathname
-    //    The backup service id of the file
-    //    The desired replication degree
-    //    For each chunk of the file:
-    //    Its id
-    //    Its perceived replication degree
-    public void state() {
-        System.out.println("FILES WHOSE BACKUP I INITIATED");
-        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
-            System.out.print("File path: " + entry.getValue());
-            System.out.print(" - ");
-            System.out.print("File ID: " + entry.getKey());
-            System.out.print(" - ");
-            System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getKey() + "_0"));
-            for (Map.Entry<String, Set<String>> entry2 : this.state.replicationDegreeMap.entrySet()) {
-                if (entry2.getKey().contains(entry.getKey())) {
-                    System.out.print("\n");
-                    System.out.print("\tChunk number: " + entry2.getKey().split("_")[1]);
-                    System.out.print(" - ");
-                    System.out.print("Is saved on the following peers: " + entry2.getValue().toString());
-                }
-            }
-        }
-        System.out.println("\nFILES THAT I HAVE BACKED UP");
-        File file = new File("../peer" + this.peerID + "/chunks");
-        File[] contents = file.listFiles();
-        if (contents != null) {
-            for (File f : contents) {
-                File[] chunks = f.listFiles();
-                if (chunks != null) {
-                    for (File c : chunks) {
-                        System.out.print("Chunk ID: " + c.getName());
-                        System.out.print(" - ");
-                        System.out.print("Chunk Size: " + c.length() / 1000 + " kb");
-                        System.out.print(" - ");
-                        System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(c.getName()));
-                        System.out.print(" - ");
-                        System.out.println("Is saved on the following peers: " + this.state.replicationDegreeMap.get(c.getName()).toString());
-                    }
-                }
-            }
-        }
-    }
-
+    //PROTOCOLS
     public void backup(String fileName, Integer ReplicationDegree) throws Exception {
-        String filePath = "../peer" + this.peerID + "/" + fileName;
+        String filePath = this.peerDir + "/" + fileName;
         byte[] pack = new byte[64000];
         int bytesRead, currentChunk = 0, lastBytesRead = 0;
-        FileInputStream fileInput = new FileInputStream(new File(filePath));
+        FileInputStream fileInput = new FileInputStream(filePath);
         String fileID = this.makeFileID(fileName);
         this.state.filenameToFileID.put(fileID,fileName);
         while ((bytesRead = fileInput.read(pack)) != -1) {
@@ -247,198 +170,179 @@ public class Peer implements RMI {
                 }
             });
         }
+        fileInput.close();
     }
 
-    private void sendPutchunk(String fileID, String chunkNO, String replicationDegree, byte[] body, boolean createEntry) throws Exception {
-
-        do {
-            this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body, createEntry);
-            Thread.sleep(1000);
-        } while (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
-                this.state.desiredRepDegree.get(fileID + "_" + chunkNO) == null ||
-                (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO).size() < this.state.desiredRepDegree.get(fileID + "_" + chunkNO)));
+    public void restore(String filePath) throws NoSuchAlgorithmException, IOException {
+        String fileID = this.makeFileID(filePath);
+        this.restoreFile.put(fileID, true);
+        this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes(), false);
     }
 
-    public void printMsg(String messageType, String peerID) {
-        System.out.println("[Peer " + this.peerID + "] Received message of type " + messageType + " from peer " + peerID);
+    public void restore(Integer chunkNo,String fileID) throws NoSuchAlgorithmException, IOException {
+        this.restoreFile.put(fileID, true);
+        this.sendPacket("GETCHUNK", fileID, chunkNo.toString(), null, "".getBytes(), false);
     }
 
-    public void interpretMessage(Message msg) throws Exception {
-        //Ignore own messages
-        if (msg.peerID.equals(this.peerID))
-            return;
+    public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
+        String fileID = this.makeFileID(filePath);
+        this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
+    }
 
-        String fileChunk = msg.fileID + "_" + msg.chunkNO;
-        printMsg(msg.messageType, msg.peerID);
-        switch (msg.messageType) {
-            case "PUTCHUNK":
-                if(this.state.filenameToFileID.get(msg.fileID) == null) {
-
-                    this.state.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
-
-                    this.state.replicationDegreeMap.computeIfAbsent(fileChunk, k -> new HashSet<>());
-
-                    this.state.replicationDegreeMap.get(fileChunk).add(this.peerID);
-
-                    this.threadPool.schedule(() -> {
-                        try {
-                            if (this.state.maxSize == -1 || this.state.currentSize + (msg.body.length / 1000) < this.state.maxSize) {
-                                if(this.peerID.equals("2")) {
-                                    System.out.println("Current Size: " + this.state.currentSize);
-                                    System.out.println("Max Size: " + this.state.maxSize);
-                                    System.out.println("Message Len: " + msg.body.length / 1000);
-                                }
-                                this.putchunk(msg);
-                                this.restore.put(fileChunk, false);
-                                this.getChunkMap.put(msg.fileID + "_" + msg.chunkNO, false);
-                            }
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
-                }
-                break;
-            case "GETCHUNK":
-                this.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,true);
-                this.threadPool.schedule(() -> {
-                    if(this.getChunkMap.get(msg.fileID+"_"+msg.chunkNO) != null && this.getChunkMap.get(msg.fileID+"_"+msg.chunkNO)) {
-                        try {
-                            this.getchunk(msg);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
-
-                break;
-            case "DELETE":
-                this.threadPool.execute(() -> {
-                    try {
-                        this.deletechunks(msg.fileID);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
-
-                break;
-            case "REMOVED":
-                if (this.state.replicationDegreeMap.get(fileChunk) != null) {
-                    this.updateRepDegreeRemove(msg);
-                    if(this.state.replicationDegreeMap.get(fileChunk).contains(this.peerID)) {
-                        if (this.state.replicationDegreeMap.get(fileChunk).size() < this.state.desiredRepDegree.get(fileChunk)) {
-                            this.restore.put(fileChunk, true);
-                            this.threadPool.schedule(() -> {
-                                try {
-                                    if (this.restore.get(fileChunk)) {
-                                        String filename = "../peer" + this.peerID + "/chunks/" + msg.fileID + "/" + fileChunk;
-                                        Path filePath = Path.of(filename);
-                                        byte[] body = Files.readAllBytes(filePath);
-
-                                        this.sendPutchunk(msg.fileID, msg.chunkNO, this.state.desiredRepDegree.get(fileChunk).toString(), body, false);
-                                    }
-
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                }
-                            }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
+    public void reclaim(Integer maxSize) throws IOException {
+        this.state.maxSize = maxSize;
+        System.out.println(this.state.maxSize);
+        List<List<String>> filenameToExcessReplicationDegree = new ArrayList<>();
+        if(this.state.currentSize > this.state.maxSize){
+            File file = new File(this.chunkDir);
+            File[] contents = file.listFiles();
+            if (contents != null) {
+                for (File f : contents) {
+                    File[] chunks = f.listFiles();
+                    if (chunks != null) {
+                        for (File c : chunks) {
+                            int excessRepDegree = this.state.replicationDegreeMap.get(c.getName()).size() - this.state.desiredRepDegree.get(c.getName());
+                            List<String> aux = new ArrayList<>();
+                            aux.add(c.getName());
+                            aux.add(Integer.toString(excessRepDegree));
+                            aux.add(String.valueOf(c.length()));
+                            filenameToExcessReplicationDegree.add(aux);
                         }
                     }
                 }
-                break;
-            case "STORED":
-                this.updateRepDegreeAdd(msg);
-                break;
-            case "CHUNK":
-                this.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,false);
-                this.lastChunkReceivedSize = msg.body.length;
-                this.saveChunk(msg.fileID, msg.chunkNO, msg.body);
-                int chunkNO = Integer.parseInt(msg.chunkNO) + 1;
-                if (this.restoreFile.get(msg.fileID) != null) {
-                    if (lastChunkReceivedSize != 64000) {
-                        this.restoreFile.put(msg.fileID, false);
-                        this.saveFile(msg.fileID);
-                    }
-                    else if (this.restoreFile.get(msg.fileID)) {
-                        this.sendPacket("GETCHUNK", msg.fileID, Integer.toString(chunkNO), null, "".getBytes(), false);
+            }
+
+            filenameToExcessReplicationDegree.sort(Comparator.comparingInt((List<String> a) -> Integer.parseInt(a.get(1))));
+            Collections.reverse(filenameToExcessReplicationDegree);
+
+            int currentIndex = 0;
+            while(this.state.currentSize > this.state.maxSize && currentIndex < filenameToExcessReplicationDegree.size()){
+                String fileID = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[0];
+                String chunkNo = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[1];
+                this.sendPacket("REMOVED",fileID,chunkNo,null,"".getBytes(), false);
+                this.state.currentSize -= Long.parseLong(filenameToExcessReplicationDegree.get(currentIndex).get(2)) / 1000;
+                File toDelete = new File(this.chunkDir + "/" + fileID + "/" + filenameToExcessReplicationDegree.get(currentIndex).get(0));
+                if(!toDelete.delete()){
+                    System.out.println("Error deleting chunk");
+                }
+                currentIndex++;
+            }
+        }
+
+    }
+
+    public void state() {
+        System.out.println("FILES WHOSE BACKUP I INITIATED");
+        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
+            System.out.print("File path: " + entry.getValue());
+            System.out.print(" - ");
+            System.out.print("File ID: " + entry.getKey());
+            System.out.print(" - ");
+            System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getKey() + "_0"));
+            for (Map.Entry<String, Set<String>> entry2 : this.state.replicationDegreeMap.entrySet()) {
+                if (entry2.getKey().contains(entry.getKey())) {
+                    System.out.print("\n");
+                    System.out.print("\tChunk number: " + entry2.getKey().split("_")[1]);
+                    System.out.print(" - ");
+                    System.out.print("Is saved on the following peers: " + entry2.getValue().toString());
+                }
+            }
+        }
+        System.out.println("\nFILES THAT I HAVE BACKED UP");
+        File file = new File(this.chunkDir);
+        File[] contents = file.listFiles();
+        if (contents != null) {
+            for (File f : contents) {
+                File[] chunks = f.listFiles();
+                if (chunks != null) {
+                    for (File c : chunks) {
+                        System.out.print("Chunk ID: " + c.getName());
+                        System.out.print(" - ");
+                        System.out.print("Chunk Size: " + c.length() / 1000 + " kb");
+                        System.out.print(" - ");
+                        System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(c.getName()));
+                        System.out.print(" - ");
+                        System.out.println("Is saved on the following peers: " + this.state.replicationDegreeMap.get(c.getName()).toString());
                     }
                 }
-                break;
-
+            }
         }
     }
 
-    private void saveFile(String fileID) throws IOException {
-        File dir = new File("../peer" + this.peerID + "/chunks/"+ fileID);
+    public void saveFile(String fileID) throws IOException {
+        File dir = new File(this.chunkDir + "/"+ fileID);
 
-        FileOutputStream fos = new FileOutputStream("../peer" + this.peerID + "/output.txt");
+        FileOutputStream fos = new FileOutputStream(this.peerDir + "/output.txt");
         String[] fileNames = dir.list();
         if(fileNames!=null) {
             Arrays.sort(fileNames, Comparator.comparingInt((String a) -> Integer.parseInt(a.split("_")[1].split("\\.")[0])));
 
             for (String fileName : fileNames) {
-                FileInputStream fis = new FileInputStream("../peer" + this.peerID + "/chunks/" + fileID + "/" + fileName);
+                FileInputStream fis = new FileInputStream(this.chunkDir + "/" + fileID + "/" + fileName);
                 fis.transferTo(fos);
                 fis.close();
             }
         }
         fos.close();
-
         this.deletechunks(fileID);
 
     }
 
-    private void updateRepDegreeAdd(Message msg) {
+    public void updateRepDegreeAdd(Message msg) {
         String file = msg.fileID + "_" + msg.chunkNO;
-
         if (this.state.replicationDegreeMap.get(file) != null) {
             this.state.replicationDegreeMap.get(file).add(msg.peerID);
         }
     }
 
-    private void updateRepDegreeRemove(Message msg) {
+    public void updateRepDegreeRemove(Message msg) {
         String file = msg.fileID + "_" + msg.chunkNO;
         if (this.state.replicationDegreeMap.get(file) != null)
             this.state.replicationDegreeMap.get(file).remove(msg.peerID);
     }
 
-    private void deletechunks(String fileID) {
-
-        File file = new File("../peer" + this.peerID + "/chunks/" + fileID);
-        File[] contents = file.listFiles();
-        if (contents != null) {
-            for (File f : contents) {
-                this.state.currentSize -= f.length()/1000;
-                f.delete();
-
-            }
-        }
-        file.delete();
-    }
-
-    private void getchunk(Message msg) {
-        String filename = "../peer" + this.peerID + "/chunks/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO;
-        try {
-            Path filePath = Path.of(filename);
-            byte[] body = Files.readAllBytes(filePath);
-            this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
-        } catch (Exception e) {
-            System.out.println("Chunk does not exist on this peer's file system");
-            System.out.println(filename);
-        }
-    }
-
-    private void putchunk(Message msg) throws Exception {
+    //SUBPROTOCOLS
+    public void putchunk(Message msg) throws Exception {
         saveChunk(msg.fileID, msg.chunkNO, msg.body);
 
         this.sendPacket("STORED", msg.fileID, msg.chunkNO, null, "".getBytes(), false);
     }
 
-    private void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
-        //fileID_chunkNO.txt
-        File dir = new File("../peer" + this.peerID + "/chunks/" + fileID);
+    public void getchunk(Message msg) {
+        String filename = this.chunkDir + "/" + msg.fileID + "/" + msg.fileID + "_" + msg.chunkNO;
+        try {
+            Path filePath = Path.of(filename);
+            byte[] body = Files.readAllBytes(filePath);
+            this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
+        } catch (Exception e) {
+            System.out.print("Chunk does not exist on this peer's file system ");
+            System.out.println(filename);
+        }
+    }
+
+    public void deletechunks(String fileID) {
+
+        File file = new File(this.chunkDir + "/" + fileID);
+        File[] contents = file.listFiles();
+        if (contents != null) {
+            for (File f : contents) {
+                this.state.currentSize -= f.length()/1000;
+                if(!f.delete())
+                    System.out.println("Error deleting chunk file");
+
+            }
+        }
+        if(!file.delete())
+            System.out.println("Error deleting chunk folder");
+    }
+
+    public void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
+
+        File dir = new File(this.chunkDir + "/" + fileID);
 
         if (!dir.exists()) {
-            dir.mkdirs();
+            if(!dir.mkdirs())
+                System.out.println("Error creating chunk folder");
         }
 
         String filename = dir + "/" + fileID + "_" + chunkNO;
@@ -447,17 +351,10 @@ public class Peer implements RMI {
             this.state.currentSize += (body.length / 1000);
 
         FileOutputStream fos = new FileOutputStream(filename);
-
         fos.write(body);
-
         fos.close();
     }
 
-    public void joinMulticast() throws Exception {
-        this.controlListener.startThread();
-        this.dataListener.startThread();
-        this.recoveryListener.startThread();
-    }
 
     private byte[] makeHeader(String msgType, String fID, String chunkNO, String repDegree) {
         String version = this.protocolVersion;
@@ -476,9 +373,12 @@ public class Peer implements RMI {
     private String makeFileID(String filePath) throws NoSuchAlgorithmException {
         StringBuilder ret = new StringBuilder();
         File f = new File(filePath);
+
+        //DATA
         String absPath = f.getAbsolutePath();
         String lastModified = String.valueOf(f.lastModified());
         String result = absPath+lastModified;
+
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hash = digest.digest(result.getBytes());
         for (byte b : hash) {
@@ -487,15 +387,15 @@ public class Peer implements RMI {
         return ret.toString();
     }
 
-    private void sendPacket(String messageType, String fileID, String chunkNO, String replicationDegree, byte[] body, boolean createEntry) throws IOException {
+    public void sendPacket(String messageType, String fileID, String chunkNO, String replicationDegree, byte[] body, boolean createEntry) throws IOException {
         byte[] header = this.makeHeader(messageType, fileID, chunkNO, replicationDegree);
 
-        int aLen = header.length;
-        int bLen = body.length;
-        byte[] result = new byte[aLen + bLen];
+        int headerLen = header.length;
+        int bodyLen = body.length;
+        byte[] result = new byte[headerLen + bodyLen];
 
-        arraycopy(header, 0, result, 0, aLen);
-        arraycopy(body, 0, result, aLen, bLen);
+        arraycopy(header, 0, result, 0, headerLen);
+        arraycopy(body, 0, result, headerLen, bodyLen);
 
 
         InetAddress groupToSend = null;
@@ -506,7 +406,7 @@ public class Peer implements RMI {
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
-                if(createEntry) {
+                if (createEntry) {
                     Set<String> set = new HashSet<>();
                     this.state.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
                     this.state.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
@@ -527,7 +427,32 @@ public class Peer implements RMI {
                 break;
         }
 
-        DatagramPacket pack = new DatagramPacket(result, result.length, groupToSend, portToSend);
-        socketToSend.send(pack);
+
+        if (socketToSend != null && portToSend != null) {
+            DatagramPacket pack = new DatagramPacket(result, result.length, groupToSend, portToSend);
+            socketToSend.send(pack);
+        }
+    }
+
+    public void sendPutchunk(String fileID, String chunkNO, String replicationDegree, byte[] body, boolean createEntry) {
+        List<Integer> waitTimes = new ArrayList<>(Arrays.asList(1, 3, 7, 15, 31));
+
+        ScheduledExecutorService pool =Executors.newScheduledThreadPool(5);
+        for(Integer waitTime : waitTimes){
+            pool.schedule(() -> {
+                        try {
+                            if (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
+                                    this.state.desiredRepDegree.get(fileID + "_" + chunkNO) == null ||
+                                    (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO).size() < this.state.desiredRepDegree.get(fileID + "_" + chunkNO))){
+                                this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body, createEntry);
+                            }
+                            else{
+                                pool.shutdownNow();
+                            }
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        },waitTime,TimeUnit.SECONDS);
+        }
     }
 }
