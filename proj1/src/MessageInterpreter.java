@@ -57,6 +57,7 @@ public class MessageInterpreter {
             if (msg.body.length != 64000) {
                 this.peer.restoreFile.put(msg.fileID, false);
                 this.peer.saveFile(msg.fileID);
+                this.peer.state.operations.remove("restore-" + msg.fileID);
             }
             else if (this.peer.restoreFile.get(msg.fileID)) {
                 this.peer.restore(chunkNO,msg.fileID);
