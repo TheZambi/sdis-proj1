@@ -64,10 +64,9 @@ public class MessageInterpreter {
         if (this.peer.restoreFile.get(msg.fileID) != null) {
             byte[] body = null;
 
-            if(this.peer.protocolVersion.equals("1.0") || msg.version.equals("1.0")) {
-                body = msg.body;
-            }
-            else if(this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
+
+            if(this.peer.protocolVersion.equals("1.1")
+                    & msg.version.equals("1.1")) {
                 int nTries = 0;
                 Socket socket = null;
                 while(nTries<5) {
@@ -94,6 +93,9 @@ public class MessageInterpreter {
                 arraycopy(aux,0,body,0,totalBytesRead);
                 in.close();
                 socket.close();
+            }
+            else{
+                body = msg.body;
             }
 
             this.peer.saveChunk(msg.fileID, msg.chunkNO, body);

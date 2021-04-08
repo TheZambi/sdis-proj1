@@ -442,10 +442,8 @@ public class Peer implements RMI {
         try {
             Path filePath = Path.of(filename);
             byte[] body = Files.readAllBytes(filePath);
-            if(this.protocolVersion.equals("1.0") || msg.version.equals("1.0")) {
-                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
-            }
-            else if(this.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
+
+            if(this.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
                 ServerSocket serverSocket = new ServerSocket(0);
                 int boundPort = serverSocket.getLocalPort();
                 this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, Integer.toString(boundPort).getBytes(), false);
@@ -464,6 +462,9 @@ public class Peer implements RMI {
                     System.err.println("Noone Connected");
                 }
 
+            }
+            else {
+                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
             }
         } catch (Exception e) {
             System.out.print("Chunk does not exist on this peer's file system ");
