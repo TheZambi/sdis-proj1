@@ -1,10 +1,18 @@
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.lang.reflect.Array;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+
+import static java.lang.System.arraycopy;
+import static java.lang.System.setOut;
 
 public class MessageInterpreter {
     Peer peer;
@@ -51,13 +59,36 @@ public class MessageInterpreter {
 
     private void processChunk(Message msg) throws IOException, NoSuchAlgorithmException {
         this.peer.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,false);
-        this.peer.saveChunk(msg.fileID, msg.chunkNO, msg.body);
         int chunkNO = Integer.parseInt(msg.chunkNO) + 1;
         if (this.peer.restoreFile.get(msg.fileID) != null) {
-            if (msg.body.length != 64000) {
+            byte[] body = null;
+
+            if(this.peer.protocolVersion.equals("1.0") || msg.version.equals("1.0")) {
+                body = msg.body;
+            }
+            else if(this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
+                Socket socket = new Socket(msg.address, Integer.parseInt(new String(msg.body)));
+                BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
+                byte[] buf = new byte[64000];
+                byte[] aux = new byte[64000];
+                int bytesRead = 0, totalBytesRead = 0;
+                while((bytesRead = in.read(buf))!=-1)
+                {
+                    arraycopy(buf, 0, aux, totalBytesRead, bytesRead);
+                    totalBytesRead+=bytesRead;
+                }
+                body = new byte[totalBytesRead];
+                arraycopy(aux,0,body,0,totalBytesRead);
+                in.close();
+                socket.close();
+            }
+
+            this.peer.saveChunk(msg.fileID, msg.chunkNO, body);
+            if (body.length != 64000) {
                 this.peer.restoreFile.put(msg.fileID, false);
                 this.peer.saveFile(msg.fileID);
                 this.peer.state.operations.remove("restore-" + msg.fileID);
+                this.peer.restoreFile.remove(msg.fileID);
             }
             else if (this.peer.restoreFile.get(msg.fileID)) {
                 this.peer.restore(chunkNO,msg.fileID);
@@ -121,6 +152,7 @@ public class MessageInterpreter {
         this.peer.threadPool.schedule(() -> {
             if(this.peer.getChunkMap.get(msg.fileID+"_"+msg.chunkNO) != null && this.peer.getChunkMap.get(msg.fileID+"_"+msg.chunkNO)) {
                 try {
+                    System.out.println(msg.chunkNO);
                     this.peer.getchunk(msg);
                 } catch (Exception e) {
                     e.printStackTrace();

@@ -33,6 +33,7 @@ public class Listener {
                 byte[] withoutLeadingZeros = Arrays.copyOf(recv.getData(), recv.getLength());
 
                 Message msg = new Message(withoutLeadingZeros);
+                msg.address = recv.getAddress();
                 try {
                     this.messageInterpreter.interpretMessage(msg);
                 } catch (Exception e) {

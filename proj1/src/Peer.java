@@ -1,7 +1,5 @@
 import java.io.*;
-import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
+import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.rmi.AlreadyBoundException;
@@ -416,7 +414,29 @@ public class Peer implements RMI {
         try {
             Path filePath = Path.of(filename);
             byte[] body = Files.readAllBytes(filePath);
-            this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
+            if(this.protocolVersion.equals("1.0") || msg.version.equals("1.0")) {
+                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
+            }
+            else if(this.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
+                ServerSocket serverSocket = new ServerSocket(0);
+                int boundPort = serverSocket.getLocalPort();
+                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, Integer.toString(boundPort).getBytes(), false);
+                serverSocket.setSoTimeout(2000);
+                Socket clientSocket = null;
+                try {
+                    clientSocket = serverSocket.accept();
+                    BufferedOutputStream bof = new BufferedOutputStream(clientSocket.getOutputStream());
+                    bof.write(body);
+
+                    clientSocket.close();
+                    serverSocket.close();
+                    bof.close();
+                }catch(Exception e)
+                {
+                    System.err.println("Noone Connected");
+                }
+
+            }
         } catch (Exception e) {
             System.out.print("Chunk does not exist on this peer's file system ");
             System.out.println(filename);
