@@ -208,17 +208,18 @@ public class Peer implements RMI {
         int bytesRead, currentChunk = 0, lastBytesRead = 0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
         String fileID = this.makeFileID(fileName);
-        this.state.filenameToFileID.put(fileID,fileName);
 
         //Removes Previous File If Changed
         for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
             if (!fileID.equals(entry.getKey()) && entry.getValue().equals(fileName)) {
                 System.out.println("Changed File");
                 this.deleteByID(entry.getKey());
+                this.state.filenameToFileID.remove(entry.getKey());
             }
         }
 
 
+        this.state.filenameToFileID.put(fileID,fileName);
         while ((bytesRead = fileInput.read(pack)) != -1) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
             int finalCurrentChunk = currentChunk;
