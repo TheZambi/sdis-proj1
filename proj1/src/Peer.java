@@ -264,7 +264,21 @@ public class Peer implements RMI {
     }
 
     public void restore(String filePath) throws NoSuchAlgorithmException, IOException {
-        String fileID = this.makeFileID(filePath);
+
+        String fileID = "";
+        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
+            if (entry.getValue().equals(filePath)) {
+                fileID = entry.getKey();
+                break;
+            }
+        }
+
+        if(fileID.equals(""))
+        {
+            System.out.println("File is not backed up!");
+            return;
+        }
+
         this.state.operations.add("restore-" + fileID);
         this.restoreFile.put(fileID, true);
         this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes(), false);
@@ -371,7 +385,12 @@ public class Peer implements RMI {
     public void saveFile(String fileID) throws IOException {
         File dir = new File(this.chunkDir + "/" + fileID);
 
-        FileOutputStream fos = new FileOutputStream(this.peerDir + "/output.txt");
+        File restoredDir = new File(this.peerDir + "/restored");
+
+        if(!restoredDir.exists())
+            restoredDir.mkdirs();
+
+        FileOutputStream fos = new FileOutputStream(this.peerDir + "/restored/" + this.state.filenameToFileID.get(fileID));
         String[] fileNames = dir.list();
         if (fileNames != null) {
             Arrays.sort(fileNames, Comparator.comparingInt((String a) -> Integer.parseInt(a.split("_")[1].split("\\.")[0])));
@@ -461,15 +480,18 @@ public class Peer implements RMI {
     public void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
         File dir = new File(this.chunkDir + "/" + fileID);
 
-        if (!dir.exists()) {
-            if (!dir.mkdirs())
-                System.out.println("Error creating chunk folder");
-        }
-
         String filename = dir + "/" + fileID + "_" + chunkNO;
 
         if (!(new File(filename).exists()))
             this.state.currentSize += (body.length / 1000);
+
+        if (!dir.exists()) {
+            if (!dir.mkdirs()) {
+                System.out.println("Error creating chunk folder");
+            }
+        }
+
+
 
         FileOutputStream fos = new FileOutputStream(filename);
         fos.write(body);

@@ -20,9 +20,11 @@ public class Message {
         String[] arr = s.split("\r\n\r\n"); //separates body from header
         Integer index = s.indexOf("\r\n\r\n") + 4;
         String header = arr[0];
-        byte[] body=null;
+        byte[] body;
         if(arr.length ==2)
-            body = Arrays.copyOfRange(msg, index, msg.length);;
+            body = Arrays.copyOfRange(msg, index, msg.length);
+        else
+            body = new byte[]{};
 
         String[] aux = header.split(" ",4);
         this.version = aux[0];
