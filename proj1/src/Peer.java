@@ -17,6 +17,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.arraycopy;
+import static java.lang.System.setOut;
 
 
 public class Peer implements RMI {
@@ -76,6 +77,22 @@ public class Peer implements RMI {
             this.state = (PeerState) ois.readObject();
             fis.close();
             ois.close();
+            for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
+                File f = new File(this.peerDir + "/" + entry.getValue());
+                if(!f.exists())
+                {
+                    System.out.println("Deleted File");
+                    this.deleteByID(entry.getKey());
+                    this.state.filenameToFileID.remove(entry.getKey());
+                }
+                else if(!this.makeFileID(entry.getValue()).equals(entry.getKey()))
+                {
+                    System.out.println("Changed File");
+                    this.deleteByID(entry.getKey());
+                    this.backup(entry.getValue(), this.state.desiredRepDegree.get(entry.getKey() + "_0"));
+                    this.state.filenameToFileID.remove(entry.getKey());
+                }
+            }
         } catch (FileNotFoundException e) {
             System.out.println("No previous state found, starting a new one");
             this.state = new PeerState();
@@ -192,6 +209,16 @@ public class Peer implements RMI {
         FileInputStream fileInput = new FileInputStream(new File(filePath));
         String fileID = this.makeFileID(fileName);
         this.state.filenameToFileID.put(fileID,fileName);
+
+        //Removes Previous File If Changed
+        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
+            if (!fileID.equals(entry.getKey()) && entry.getValue().equals(fileName)) {
+                System.out.println("Changed File");
+                this.deleteByID(entry.getKey());
+            }
+        }
+
+
         while ((bytesRead = fileInput.read(pack)) != -1) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
             int finalCurrentChunk = currentChunk;
@@ -247,6 +274,11 @@ public class Peer implements RMI {
     public void restore(Integer chunkNo, String fileID) throws NoSuchAlgorithmException, IOException {
         this.restoreFile.put(fileID, true);
         this.sendPacket("GETCHUNK", fileID, chunkNo.toString(), null, "".getBytes(), false);
+    }
+
+
+    public void deleteByID(String fileID) throws NoSuchAlgorithmException, IOException {
+        this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
     }
 
     public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
@@ -440,7 +472,7 @@ public class Peer implements RMI {
 
     private String makeFileID(String filePath) throws NoSuchAlgorithmException {
         StringBuilder ret = new StringBuilder();
-        File f = new File(filePath);
+        File f = new File("../peer" + this.peerID + "/" + filePath);
 
         //DATA
         String absPath = f.getAbsolutePath();

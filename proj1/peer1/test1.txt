@@ -90,7 +90,7 @@ Ponde no chão: vereis um novo exemplo
 De amor dos pátrios feitos valorosos,
 Em versos divulgado numerosos.
 Vereis amor da pátria, não movido
-De prêmio vil, mas alto e quase eterno;
+De prêmio vil, mas alto e quase eterno;a
 Que não é prêmio vil ser conhecido
 Por um pregão do ninho meu paterno.
 Ouvi: vereis o nome engrandecido
@@ -18473,4 +18473,4 @@ A minha já estimada e leda Musa
 Fico que em todo o mundo de vós cante,
 De sorte que Alexandro em vós se veja,
 Sem à dita de Aquiles ter inveja.
-FIM
+FIM :)
