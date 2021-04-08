@@ -7,6 +7,6 @@ public interface RMI extends Remote {
     void backup(String filePath, Integer ReplicationDegree) throws Exception;
     void restore(String filePath) throws NoSuchAlgorithmException, IOException;
     void delete(String filePath) throws NoSuchAlgorithmException, IOException;
-    void state() throws RemoteException;
-    void reclaim(Integer maxSize) throws IOException;
+    String state() throws RemoteException;
+    void reclaim(Integer maxSize) throws Exception;
 }

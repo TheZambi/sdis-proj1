@@ -1,3 +1,4 @@
+import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
@@ -42,7 +43,13 @@ public class Listener {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-            }});
-        this.socket.leaveGroup(this.group);
+            }
+
+            try {
+                this.socket.leaveGroup(this.group);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
     }
 }

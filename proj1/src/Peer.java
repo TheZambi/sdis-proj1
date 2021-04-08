@@ -152,9 +152,6 @@ public class Peer implements RMI {
                     this.threadPool.execute(() -> {
                         try {
                             this.reclaim(Integer.parseInt(operation.get(1)));
-                            if(this.state.currentSize < this.state.maxSize && this.protocolVersion.equals("1.1")){
-                                this.dataListener.startThread();
-                            }
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -304,10 +301,9 @@ public class Peer implements RMI {
         this.state.operations.remove("delete-" + filePath);
     }
 
-    public void reclaim(Integer maxSize) throws IOException {
+    public void reclaim(Integer maxSize) throws Exception {
         this.state.operations.add("reclaim-" + maxSize);
         this.state.maxSize = maxSize;
-        System.out.println(this.state.maxSize);
         List<List<String>> filenameToExcessReplicationDegree = new ArrayList<>();
         if (this.state.currentSize > this.state.maxSize) {
             File file = new File(this.chunkDir);
@@ -345,26 +341,31 @@ public class Peer implements RMI {
             }
         }
         this.state.operations.add("reclaim-" + maxSize);
+        if(this.state.currentSize < this.state.maxSize && this.state.maxSize != -1 && this.protocolVersion.equals("1.1")){
+            if(!this.dataListener.connect)
+                this.dataListener.startThread();
+        }
     }
 
-    public void state() {
-        System.out.println("FILES WHOSE BACKUP I INITIATED");
+    public String state() {
+        String result = "";
+        result += "FILES WHOSE BACKUP I INITIATED\n";
         for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
-            System.out.print("File path: " + entry.getValue());
-            System.out.print(" - ");
-            System.out.print("File ID: " + entry.getKey());
-            System.out.print(" - ");
-            System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getKey() + "_0"));
+            result += "File path: " + entry.getValue();
+            result += " - ";
+            result += "File ID: " + entry.getKey();
+            result += " - ";
+            result += "Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getKey() + "_0");
             for (Map.Entry<String, Set<String>> entry2 : this.state.replicationDegreeMap.entrySet()) {
                 if (entry2.getKey().contains(entry.getKey())) {
-                    System.out.print("\n");
-                    System.out.print("\tChunk number: " + entry2.getKey().split("_")[1]);
-                    System.out.print(" - ");
-                    System.out.print("Is saved on the following peers: " + entry2.getValue().toString());
+                    result += "\n";
+                    result += "\tChunk number: " + entry2.getKey().split("_")[1];
+                    result += " - ";
+                    result += "Is saved on the following peers: " + entry2.getValue().toString();
                 }
             }
         }
-        System.out.println("\nFILES THAT I HAVE BACKED UP");
+        result += "\nFILES THAT I HAVE BACKED UP\n";
         File file = new File(this.chunkDir);
         File[] contents = file.listFiles();
         if (contents != null) {
@@ -372,17 +373,22 @@ public class Peer implements RMI {
                 File[] chunks = f.listFiles();
                 if (chunks != null) {
                     for (File c : chunks) {
-                        System.out.print("Chunk ID: " + c.getName());
-                        System.out.print(" - ");
-                        System.out.print("Chunk Size: " + c.length() / 1000 + " kb");
-                        System.out.print(" - ");
-                        System.out.print("Desired Replication Degree: " + this.state.desiredRepDegree.get(c.getName()));
-                        System.out.print(" - ");
-                        System.out.println("Is saved on the following peers: " + this.state.replicationDegreeMap.get(c.getName()).toString());
+                        result += "Chunk ID: " + c.getName();
+                        result += " - ";
+                        result += "Chunk Size: " + c.length() / 1000 + " kb";
+                        result += " - ";
+                        result += "Desired Replication Degree: " + this.state.desiredRepDegree.get(c.getName());
+                        result += " - ";
+                        result += "Is saved on the following peers: " + this.state.replicationDegreeMap.get(c.getName()).toString();
                     }
                 }
             }
         }
+        result += "\nSTORAGE CAPACITY: ";
+        result += this.state.maxSize + "\n";
+        result += "\nCAPACITY OCCUPIED: ";
+        result += this.state.currentSize + "\n";
+        return result;
     }
 
     public void saveFile(String fileID) throws IOException {

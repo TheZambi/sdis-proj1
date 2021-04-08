@@ -20,7 +20,7 @@ public class TestApp {
                     stub.delete(args[2]);
                     break;
                 case "STATE":
-                    stub.state();
+                    System.out.println(stub.state());
                     break;
                 case "RECLAIM":
                     stub.reclaim(Integer.parseInt(args[2]));
