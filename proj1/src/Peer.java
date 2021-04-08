@@ -152,7 +152,10 @@ public class Peer implements RMI {
                     this.threadPool.execute(() -> {
                         try {
                             this.reclaim(Integer.parseInt(operation.get(1)));
-                        } catch (IOException e) {
+                            if(this.state.currentSize < this.state.maxSize && this.protocolVersion.equals("1.1")){
+                                this.dataListener.startThread();
+                            }
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
                     });

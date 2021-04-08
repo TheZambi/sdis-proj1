@@ -10,6 +10,7 @@ public class Listener {
     MulticastSocket socket;
     Peer peer;
     MessageInterpreter messageInterpreter;
+    boolean connect;
 
     public Listener(String multicastInfo, Peer peer) throws Exception {
         this.peer = peer;
@@ -17,12 +18,14 @@ public class Listener {
         this.group = InetAddress.getByName(multicastInfo.split(":")[0]);
         this.port = Integer.parseInt(multicastInfo.split(":")[1]);
         this.socket = new MulticastSocket(this.port);
+        this.connect = true;
     }
 
     public void startThread() throws Exception {
         this.socket.joinGroup(this.group);
+        this.connect = true;
         this.peer.threadPool.execute(() -> {
-            while(true){
+            while(this.connect){
                 byte[] pack = new byte[64256];
                 DatagramPacket recv = new DatagramPacket(pack, pack.length);
                 try {
@@ -40,5 +43,6 @@ public class Listener {
                     e.printStackTrace();
                 }
             }});
+        this.socket.leaveGroup(this.group);
     }
 }

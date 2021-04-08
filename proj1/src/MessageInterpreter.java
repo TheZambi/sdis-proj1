@@ -140,6 +140,9 @@ public class MessageInterpreter {
         this.peer.threadPool.execute(() -> {
             try {
                 this.peer.deletechunks(msg.fileID);
+                if(this.peer.state.currentSize < this.peer.state.maxSize && this.peer.protocolVersion.equals("1.1")){
+                    this.peer.dataListener.startThread();
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -177,11 +180,15 @@ public class MessageInterpreter {
                             this.peer.putchunk(msg);
                             this.peer.restore.put(fileChunk, false);
                             this.peer.getChunkMap.put(msg.fileID + "_" + msg.chunkNO, false);
+                            if(this.peer.state.currentSize >= this.peer.state.maxSize && this.peer.protocolVersion.equals("1.1")){
+                                this.peer.dataListener.connect = false;
+                            }
                         }
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }, new Random().nextInt(400), TimeUnit.MILLISECONDS);
             }
+
     }
 }
