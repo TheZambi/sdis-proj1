@@ -1,5 +1,5 @@
 .idea
-*/src/*.class
+*/build/*.class
 g04.iml
 out/
 proj1/*/chunks

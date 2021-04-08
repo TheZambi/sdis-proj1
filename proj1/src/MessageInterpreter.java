@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Random;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.arraycopy;
@@ -67,7 +68,19 @@ public class MessageInterpreter {
                 body = msg.body;
             }
             else if(this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
-                Socket socket = new Socket(msg.address, Integer.parseInt(new String(msg.body)));
+                int nTries = 0;
+                Socket socket = null;
+                while(nTries<5) {
+                    try {
+                        socket = new Socket(msg.address, Integer.parseInt(new String(msg.body)));
+                        Thread.sleep(100);
+                        break;
+                    }catch (Exception e) {
+                        nTries++;
+                    }
+                }
+                if(nTries==5)
+                    return;
                 BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
                 byte[] buf = new byte[64000];
                 byte[] aux = new byte[64000];
@@ -155,7 +168,6 @@ public class MessageInterpreter {
         this.peer.threadPool.schedule(() -> {
             if(this.peer.getChunkMap.get(msg.fileID+"_"+msg.chunkNO) != null && this.peer.getChunkMap.get(msg.fileID+"_"+msg.chunkNO)) {
                 try {
-                    System.out.println(msg.chunkNO);
                     this.peer.getchunk(msg);
                 } catch (Exception e) {
                     e.printStackTrace();
