@@ -60,7 +60,7 @@ public class Peer implements RMI {
 
         this.peerDir = "../peer" + this.peerID;
         this.chunkDir = this.peerDir + "/chunks";
-        this.stateFile = this.peerDir + "/state.txt";
+        this.stateFile = this.peerDir + "/state";
 
         File peer = new File(this.peerDir);
         if (!peer.exists())
