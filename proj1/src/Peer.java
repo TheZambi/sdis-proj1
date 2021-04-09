@@ -15,7 +15,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.arraycopy;
-import static java.lang.System.setOut;
 
 
 public class Peer implements RMI {
@@ -44,19 +43,22 @@ public class Peer implements RMI {
         this.peerID = args[1];
         this.accessPoint = args[2];
 
-        String multicastControl = args[3];
-        String multicastData = args[4];
-        String multicastRecovery = args[5];
+        String multicastControlAddr = args[3];
+        String multicastControlPort = args[4];
+        String multicastDataAddr = args[5];
+        String multicastDataPort = args[6];
+        String multicastRecoveryAddr = args[7];
+        String multicastRecoveryPort = args[8];
 
 
         this.threadPool = Executors.newScheduledThreadPool(15);
         this.backupProtocolThreadPool = Executors.newScheduledThreadPool(5);
 
-        this.controlListener = new Listener(multicastControl, this);
+        this.controlListener = new Listener(multicastControlAddr,multicastControlPort , this);
 
-        this.dataListener = new Listener(multicastData, this);
+        this.dataListener = new Listener(multicastDataAddr,multicastDataPort , this);
 
-        this.recoveryListener = new Listener(multicastRecovery, this);
+        this.recoveryListener = new Listener(multicastRecoveryAddr,multicastRecoveryPort ,this);
 
         this.peerDir = "../peer" + this.peerID;
         this.chunkDir = this.peerDir + "/chunks";
@@ -66,9 +68,11 @@ public class Peer implements RMI {
         if (!peer.exists())
             if (!peer.mkdir()) {
                 System.out.println("Error creating peer directory");
-                return;
             }
+    }
 
+    private void updateFileChanges()
+    {
         try {
             FileInputStream fis = new FileInputStream(this.stateFile);
             ObjectInputStream ois = new ObjectInputStream(fis);
@@ -88,11 +92,10 @@ public class Peer implements RMI {
                     this.state.filenameToFileID.remove(entry.getKey());
                 }
             }
-        } catch (FileNotFoundException e) {
+        } catch (Exception e) {
             System.out.println("No previous state found, starting a new one");
             this.state = new PeerState();
         }
-
         long currentSize = 0;
         File file = new File(this.chunkDir);
         File[] contents = file.listFiles();
@@ -127,9 +130,7 @@ public class Peer implements RMI {
                     this.threadPool.execute(() -> {
                         try {
                             this.delete(operation.get(1));
-                        } catch (NoSuchAlgorithmException e) {
-                            e.printStackTrace();
-                        } catch (IOException e) {
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
                     });
@@ -138,9 +139,7 @@ public class Peer implements RMI {
                     this.threadPool.execute(() -> {
                         try {
                             this.restore(0, operation.get(1));
-                        } catch (NoSuchAlgorithmException e) {
-                            e.printStackTrace();
-                        } catch (IOException e) {
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
                     });
@@ -161,6 +160,7 @@ public class Peer implements RMI {
     public static void main(String[] args) throws Exception {
         Peer peer = new Peer(args);
         peer.joinMulticast();
+        peer.updateFileChanges();
         peer.setupRMI();
 
         peer.threadPool.scheduleAtFixedRate(() -> {
@@ -254,13 +254,12 @@ public class Peer implements RMI {
         }
         if (currentChunk == chunkNo) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
-            int finalCurrentChunk = currentChunk;
-            this.sendPutchunk(fID, Integer.toString(finalCurrentChunk), replicationDegree.toString(), body, true);
+            this.sendPutchunk(fID, Integer.toString(currentChunk), replicationDegree.toString(), body, true);
         }
         fileInput.close();
     }
 
-    public void restore(String filePath) throws NoSuchAlgorithmException, IOException {
+    public void restore(String filePath) throws IOException {
 
         String fileID = "";
         for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
@@ -277,16 +276,16 @@ public class Peer implements RMI {
 
         this.state.operations.add("restore-" + fileID);
         this.restoreFile.put(fileID, true);
-        this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes(), false);
+        this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes());
     }
 
-    public void restore(Integer chunkNo, String fileID) throws NoSuchAlgorithmException, IOException {
+    public void restore(Integer chunkNo, String fileID) throws IOException {
         this.restoreFile.put(fileID, true);
-        this.sendPacket("GETCHUNK", fileID, chunkNo.toString(), null, "".getBytes(), false);
+        this.sendPacket("GETCHUNK", fileID, chunkNo.toString(), null, "".getBytes());
     }
 
 
-    public void deleteByID(String fileID) throws NoSuchAlgorithmException, IOException {
+    public void deleteByID(String fileID) throws IOException {
         if (this.state.deletedFilesFromPeers.get(fileID) == null && this.protocolVersion.equals("1.1") && this.state.replicationDegreeMap.get(fileID) != null)
             this.state.deletedFilesFromPeers.put(fileID, this.state.replicationDegreeMap.get(fileID));
         List<String> keysToRemove = new ArrayList<>();
@@ -304,7 +303,7 @@ public class Peer implements RMI {
         }
 
 
-        this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
+        this.sendPacket("DELETE", fileID, null, null, "".getBytes());
     }
 
     public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
@@ -332,7 +331,7 @@ public class Peer implements RMI {
         this.state.filenameToFileID.remove(fileID);
 
 
-        this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
+        this.sendPacket("DELETE", fileID, null, null, "".getBytes());
         this.state.operations.remove("delete-" + filePath);
     }
 
@@ -366,7 +365,7 @@ public class Peer implements RMI {
             while (this.state.currentSize > this.state.maxSize && currentIndex < filenameToExcessReplicationDegree.size()) {
                 String fileID = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[0];
                 String chunkNo = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[1];
-                this.sendPacket("REMOVED", fileID, chunkNo, null, "".getBytes(), false);
+                this.sendPacket("REMOVED", fileID, chunkNo, null, "".getBytes());
                 this.state.currentSize -= Long.parseLong(filenameToExcessReplicationDegree.get(currentIndex).get(2)) / 1000;
                 File toDelete = new File(this.chunkDir + "/" + fileID + "/" + filenameToExcessReplicationDegree.get(currentIndex).get(0));
                 if (!toDelete.delete()) {
@@ -383,24 +382,24 @@ public class Peer implements RMI {
     }
 
     public String state() {
-        String result = "";
-        result += "FILES WHOSE BACKUP I INITIATED\n";
+        StringBuilder result = new StringBuilder();
+        result.append("FILES WHOSE BACKUP I INITIATED\n");
         for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
-            result += "File path: " + entry.getValue();
-            result += " - ";
-            result += "File ID: " + entry.getKey();
-            result += " - ";
-            result += "Desired Replication Degree: " + this.state.desiredRepDegree.get(entry.getKey() + "_0");
+            result.append("File path: ").append(entry.getValue());
+            result.append(" - ");
+            result.append("File ID: ").append(entry.getKey());
+            result.append(" - ");
+            result.append("Desired Replication Degree: ").append(this.state.desiredRepDegree.get(entry.getKey() + "_0"));
             for (Map.Entry<String, Set<String>> entry2 : this.state.replicationDegreeMap.entrySet()) {
                 if (entry2.getKey().contains(entry.getKey())) {
-                    result += "\n";
-                    result += "\tChunk number: " + entry2.getKey().split("_")[1];
-                    result += " - ";
-                    result += "Is saved on the following peers: " + entry2.getValue().toString();
+                    result.append("\n");
+                    result.append("\tChunk number: ").append(entry2.getKey().split("_")[1]);
+                    result.append(" - ");
+                    result.append("Is saved on the following peers: ").append(entry2.getValue().toString());
                 }
             }
         }
-        result += "\nFILES THAT I HAVE BACKED UP\n";
+        result.append("\nFILES THAT I HAVE BACKED UP\n");
         File file = new File(this.chunkDir);
         File[] contents = file.listFiles();
         if (contents != null) {
@@ -408,22 +407,22 @@ public class Peer implements RMI {
                 File[] chunks = f.listFiles();
                 if (chunks != null) {
                     for (File c : chunks) {
-                        result += "Chunk ID: " + c.getName();
-                        result += " - ";
-                        result += "Chunk Size: " + c.length() / 1000 + " kb";
-                        result += " - ";
-                        result += "Desired Replication Degree: " + this.state.desiredRepDegree.get(c.getName());
-                        result += " - ";
-                        result += "Is saved on the following peers: " + this.state.replicationDegreeMap.get(c.getName()).toString();
+                        result.append("Chunk ID: ").append(c.getName());
+                        result.append(" - ");
+                        result.append("Chunk Size: ").append(c.length() / 1000).append(" kb");
+                        result.append(" - ");
+                        result.append("Desired Replication Degree: ").append(this.state.desiredRepDegree.get(c.getName()));
+                        result.append(" - ");
+                        result.append("Is saved on the following peers: ").append(this.state.replicationDegreeMap.get(c.getName()).toString()).append("\n");
                     }
                 }
             }
         }
-        result += "\nSTORAGE CAPACITY: ";
-        result += this.state.maxSize + "\n";
-        result += "\nCAPACITY OCCUPIED: ";
-        result += this.state.currentSize + "\n";
-        return result;
+        result.append("\nSTORAGE CAPACITY: ");
+        result.append(this.state.maxSize).append("\n");
+        result.append("\nCAPACITY OCCUPIED: ");
+        result.append(this.state.currentSize).append("\n");
+        return result.toString();
     }
 
     public void saveFile(String fileID) throws IOException {
@@ -469,7 +468,7 @@ public class Peer implements RMI {
     public void putchunk(Message msg) throws Exception {
         saveChunk(msg.fileID, msg.chunkNO, msg.body);
 
-        this.sendPacket("STORED", msg.fileID, msg.chunkNO, null, "".getBytes(), false);
+        this.sendPacket("STORED", msg.fileID, msg.chunkNO, null, "".getBytes());
     }
 
     public void getchunk(Message msg) {
@@ -481,9 +480,9 @@ public class Peer implements RMI {
             if (this.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
                 ServerSocket serverSocket = new ServerSocket(0);
                 int boundPort = serverSocket.getLocalPort();
-                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, Integer.toString(boundPort).getBytes(), false);
+                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, Integer.toString(boundPort).getBytes());
                 serverSocket.setSoTimeout(2000);
-                Socket clientSocket = null;
+                Socket clientSocket;
                 try {
                     clientSocket = serverSocket.accept();
                     BufferedOutputStream bof = new BufferedOutputStream(clientSocket.getOutputStream());
@@ -497,7 +496,7 @@ public class Peer implements RMI {
                 }
 
             } else {
-                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
+                this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body);
             }
         } catch (Exception e) {
             System.out.print("Chunk does not exist on this peer's file system ");
@@ -577,7 +576,7 @@ public class Peer implements RMI {
         return ret.toString();
     }
 
-    public void sendPacket(String messageType, String fileID, String chunkNO, String replicationDegree, byte[] body, boolean createEntry) throws IOException {
+    public void sendPacket(String messageType, String fileID, String chunkNO, String replicationDegree, byte[] body) throws IOException {
         byte[] header = this.makeHeader(messageType, fileID, chunkNO, replicationDegree);
 
         int headerLen = header.length;
@@ -596,7 +595,6 @@ public class Peer implements RMI {
                 groupToSend = this.dataListener.group;
                 portToSend = this.dataListener.port;
                 socketToSend = this.dataListener.socket;
-
                 break;
             case "GETCHUNK":
             case "DELETE":
@@ -629,7 +627,7 @@ public class Peer implements RMI {
                 this.state.replicationDegreeMap.put(fileID + "_" + chunkNO, set);
                 this.state.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
             }
-            this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body, createEntry);
+            this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body);
             Thread.sleep((long) Math.pow(2, nTries) * 1000);
             nTries++;
             if (nTries > 5)

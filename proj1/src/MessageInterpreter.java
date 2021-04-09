@@ -1,21 +1,15 @@
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.lang.reflect.Array;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.arraycopy;
-import static java.lang.System.setOut;
 
 public class MessageInterpreter {
     Peer peer;
@@ -75,7 +69,7 @@ public class MessageInterpreter {
     private void checkForMissedPeerDelete(Message msg) throws IOException {
         for(Map.Entry<String, Set<String>> entry: this.peer.state.deletedFilesFromPeers.entrySet()){
             if(entry.getValue().contains(msg.peerID)){
-                this.peer.sendPacket("DELETE", entry.getKey(), null, null, "".getBytes(), false);
+                this.peer.sendPacket("DELETE", entry.getKey(), null, null, "".getBytes());
             }
             if(msg.version.equals("1.0")){
                 this.peer.state.deletedFilesFromPeers.get(entry.getKey()).remove(msg.peerID);
@@ -84,18 +78,19 @@ public class MessageInterpreter {
     }
 
     private void processDeleteSucess(Message msg) {
-        if(this.peer.state.deletedFilesFromPeers.get(msg.fileID) != null)
+        if(this.peer.state.deletedFilesFromPeers.get(msg.fileID) != null) {
             this.peer.state.deletedFilesFromPeers.get(msg.fileID).remove(msg.peerID);
-        if(this.peer.state.deletedFilesFromPeers.get(msg.fileID).isEmpty()){
-            this.peer.state.deletedFilesFromPeers.remove(msg.fileID);
+            if (this.peer.state.deletedFilesFromPeers.get(msg.fileID).isEmpty()) {
+                this.peer.state.deletedFilesFromPeers.remove(msg.fileID);
+            }
         }
     }
 
-    private void processChunk(Message msg) throws IOException, NoSuchAlgorithmException {
+    private void processChunk(Message msg) throws IOException {
         this.peer.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,false);
         int chunkNO = Integer.parseInt(msg.chunkNO) + 1;
         if (this.peer.restoreFile.get(msg.fileID) != null) {
-            byte[] body = null;
+            byte[] body;
 
 
             if(this.peer.protocolVersion.equals("1.1")
@@ -116,7 +111,7 @@ public class MessageInterpreter {
                 BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
                 byte[] buf = new byte[64000];
                 byte[] aux = new byte[64000];
-                int bytesRead = 0, totalBytesRead = 0;
+                int bytesRead, totalBytesRead = 0;
                 while((bytesRead = in.read(buf))!=-1)
                 {
                     arraycopy(buf, 0, aux, totalBytesRead, bytesRead);
@@ -144,7 +139,7 @@ public class MessageInterpreter {
         }
     }
 
-    private void processRemoveChunk(String fileChunk, Message msg) throws Exception {
+    private void processRemoveChunk(String fileChunk, Message msg) {
         //REMOVE FROM MAP THE PEER WHO REMOVED CHUNK
             if (this.peer.state.replicationDegreeMap.get(fileChunk) != null) {
                 this.peer.updateRepDegreeRemove(msg);
@@ -189,7 +184,7 @@ public class MessageInterpreter {
             try {
                 boolean ret = this.peer.deletechunks(msg.fileID);
                 if(ret && this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")){
-                    this.peer.sendPacket("DELETESUCESS", msg.fileID, null, null, "".getBytes(), false);
+                    this.peer.sendPacket("DELETESUCESS", msg.fileID, null, null, "".getBytes());
                 }
                 if(this.peer.state.currentSize < this.peer.state.maxSize && this.peer.state.maxSize != -1 && this.peer.protocolVersion.equals("1.1")){
                     if(!this.peer.dataListener.connect)

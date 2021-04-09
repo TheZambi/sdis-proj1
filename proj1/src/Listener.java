@@ -13,11 +13,11 @@ public class Listener {
     MessageInterpreter messageInterpreter;
     boolean connect;
 
-    public Listener(String multicastInfo, Peer peer) throws Exception {
+    public Listener(String multicastInfoAddr,String multicastInfoPort , Peer peer) throws Exception {
         this.peer = peer;
         this.messageInterpreter = new MessageInterpreter(peer);
-        this.group = InetAddress.getByName(multicastInfo.split(":")[0]);
-        this.port = Integer.parseInt(multicastInfo.split(":")[1]);
+        this.group = InetAddress.getByName(multicastInfoAddr);
+        this.port = Integer.parseInt(multicastInfoPort);
         this.socket = new MulticastSocket(this.port);
         this.connect = true;
     }
