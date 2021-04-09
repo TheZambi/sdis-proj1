@@ -328,7 +328,7 @@ public class Peer implements RMI {
             this.state.replicationDegreeMap.remove(s);
             this.state.desiredRepDegree.remove(s);
         }
-        
+
         this.state.filenameToFileID.remove(fileID);
 
 

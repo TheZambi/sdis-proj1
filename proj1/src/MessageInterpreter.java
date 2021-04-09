@@ -84,7 +84,8 @@ public class MessageInterpreter {
     }
 
     private void processDeleteSucess(Message msg) {
-        this.peer.state.deletedFilesFromPeers.get(msg.fileID).remove(msg.peerID);
+        if(this.peer.state.deletedFilesFromPeers.get(msg.fileID) != null)
+            this.peer.state.deletedFilesFromPeers.get(msg.fileID).remove(msg.peerID);
         if(this.peer.state.deletedFilesFromPeers.get(msg.fileID).isEmpty()){
             this.peer.state.deletedFilesFromPeers.remove(msg.fileID);
         }
@@ -187,10 +188,7 @@ public class MessageInterpreter {
         this.peer.threadPool.execute(() -> {
             try {
                 boolean ret = this.peer.deletechunks(msg.fileID);
-                System.out.println("REturn: " + ret);
-                System.out.println();
                 if(ret && this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")){
-
                     this.peer.sendPacket("DELETESUCESS", msg.fileID, null, null, "".getBytes(), false);
                 }
                 if(this.peer.state.currentSize < this.peer.state.maxSize && this.peer.state.maxSize != -1 && this.peer.protocolVersion.equals("1.1")){
