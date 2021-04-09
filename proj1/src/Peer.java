@@ -289,12 +289,20 @@ public class Peer implements RMI {
     public void deleteByID(String fileID) throws NoSuchAlgorithmException, IOException {
         if (this.state.deletedFilesFromPeers.get(fileID) == null && this.protocolVersion.equals("1.1") && this.state.replicationDegreeMap.get(fileID) != null)
             this.state.deletedFilesFromPeers.put(fileID, this.state.replicationDegreeMap.get(fileID));
+        List<String> keysToRemove = new ArrayList<>();
         for (Map.Entry<String, Set<String>> entry : this.state.replicationDegreeMap.entrySet()) {
             if (entry.getKey().contains(fileID)) {
-                this.state.replicationDegreeMap.remove(entry.getKey());
-                this.state.desiredRepDegree.remove(entry.getKey());
+                keysToRemove.add(entry.getKey());
             }
         }
+
+        this.state.filenameToFileID.remove(fileID);
+
+        for(String s: keysToRemove){
+            this.state.replicationDegreeMap.remove(s);
+            this.state.desiredRepDegree.remove(s);
+        }
+
 
         this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
     }
@@ -309,12 +317,21 @@ public class Peer implements RMI {
                 } else if (entry.getKey().contains(fileID))
                     this.state.deletedFilesFromPeers.get(fileID).addAll(entry.getValue());
             }
+        List<String> keysToRemove = new ArrayList<>();
         for (Map.Entry<String, Set<String>> entry : this.state.replicationDegreeMap.entrySet()) {
             if (entry.getKey().contains(fileID)) {
-                this.state.replicationDegreeMap.remove(entry.getKey());
-                this.state.desiredRepDegree.remove(entry.getKey());
+                keysToRemove.add(entry.getKey());
             }
         }
+
+        for(String s: keysToRemove){
+            this.state.replicationDegreeMap.remove(s);
+            this.state.desiredRepDegree.remove(s);
+        }
+        
+        this.state.filenameToFileID.remove(fileID);
+
+
         this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
         this.state.operations.remove("delete-" + filePath);
     }
