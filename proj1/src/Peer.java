@@ -77,14 +77,11 @@ public class Peer implements RMI {
             ois.close();
             for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
                 File f = new File(this.peerDir + "/" + entry.getValue());
-                if(!f.exists())
-                {
+                if (!f.exists()) {
                     System.out.println("Deleted File");
                     this.deleteByID(entry.getKey());
                     this.state.filenameToFileID.remove(entry.getKey());
-                }
-                else if(!this.makeFileID(entry.getValue()).equals(entry.getKey()))
-                {
+                } else if (!this.makeFileID(entry.getValue()).equals(entry.getKey())) {
                     System.out.println("Changed File");
                     this.deleteByID(entry.getKey());
                     this.backup(entry.getValue(), this.state.desiredRepDegree.get(entry.getKey() + "_0"));
@@ -217,7 +214,7 @@ public class Peer implements RMI {
         }
 
 
-        this.state.filenameToFileID.put(fileID,fileName);
+        this.state.filenameToFileID.put(fileID, fileName);
         while ((bytesRead = fileInput.read(pack)) != -1) {
             byte[] body = Arrays.copyOfRange(pack, 0, bytesRead);
             int finalCurrentChunk = currentChunk;
@@ -273,8 +270,7 @@ public class Peer implements RMI {
             }
         }
 
-        if(fileID.equals(""))
-        {
+        if (fileID.equals("")) {
             System.out.println("File is not backed up!");
             return;
         }
@@ -291,12 +287,34 @@ public class Peer implements RMI {
 
 
     public void deleteByID(String fileID) throws NoSuchAlgorithmException, IOException {
+        if (this.state.deletedFilesFromPeers.get(fileID) == null && this.protocolVersion.equals("1.1") && this.state.replicationDegreeMap.get(fileID) != null)
+            this.state.deletedFilesFromPeers.put(fileID, this.state.replicationDegreeMap.get(fileID));
+        for (Map.Entry<String, Set<String>> entry : this.state.replicationDegreeMap.entrySet()) {
+            if (entry.getKey().contains(fileID)) {
+                this.state.replicationDegreeMap.remove(entry.getKey());
+                this.state.desiredRepDegree.remove(entry.getKey());
+            }
+        }
+
         this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
     }
 
     public void delete(String filePath) throws NoSuchAlgorithmException, IOException {
         this.state.operations.add("delete-" + filePath);
         String fileID = this.makeFileID(filePath);
+        if (this.state.deletedFilesFromPeers.get(fileID) == null && this.protocolVersion.equals("1.1"))
+            for (Map.Entry<String, Set<String>> entry : this.state.replicationDegreeMap.entrySet()) {
+                if (this.state.deletedFilesFromPeers.get(fileID) == null) {
+                    this.state.deletedFilesFromPeers.put(fileID, entry.getValue());
+                } else if (entry.getKey().contains(fileID))
+                    this.state.deletedFilesFromPeers.get(fileID).addAll(entry.getValue());
+            }
+        for (Map.Entry<String, Set<String>> entry : this.state.replicationDegreeMap.entrySet()) {
+            if (entry.getKey().contains(fileID)) {
+                this.state.replicationDegreeMap.remove(entry.getKey());
+                this.state.desiredRepDegree.remove(entry.getKey());
+            }
+        }
         this.sendPacket("DELETE", fileID, null, null, "".getBytes(), false);
         this.state.operations.remove("delete-" + filePath);
     }
@@ -341,8 +359,8 @@ public class Peer implements RMI {
             }
         }
         this.state.operations.add("reclaim-" + maxSize);
-        if(this.state.currentSize < this.state.maxSize && this.state.maxSize != -1 && this.protocolVersion.equals("1.1")){
-            if(!this.dataListener.connect)
+        if (this.state.currentSize < this.state.maxSize && this.state.maxSize != -1 && this.protocolVersion.equals("1.1")) {
+            if (!this.dataListener.connect)
                 this.dataListener.startThread();
         }
     }
@@ -396,7 +414,7 @@ public class Peer implements RMI {
 
         File restoredDir = new File(this.peerDir + "/restored");
 
-        if(!restoredDir.exists())
+        if (!restoredDir.exists())
             restoredDir.mkdirs();
 
         FileOutputStream fos = new FileOutputStream(this.peerDir + "/restored/" + this.state.filenameToFileID.get(fileID));
@@ -443,7 +461,7 @@ public class Peer implements RMI {
             Path filePath = Path.of(filename);
             byte[] body = Files.readAllBytes(filePath);
 
-            if(this.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
+            if (this.protocolVersion.equals("1.1") && msg.version.equals("1.1")) {
                 ServerSocket serverSocket = new ServerSocket(0);
                 int boundPort = serverSocket.getLocalPort();
                 this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, Integer.toString(boundPort).getBytes(), false);
@@ -457,13 +475,11 @@ public class Peer implements RMI {
                     clientSocket.close();
                     serverSocket.close();
                     bof.close();
-                }catch(Exception e)
-                {
+                } catch (Exception e) {
                     System.err.println("Noone Connected");
                 }
 
-            }
-            else {
+            } else {
                 this.sendPacket("CHUNK", msg.fileID, msg.chunkNO, null, body, false);
             }
         } catch (Exception e) {
@@ -472,19 +488,24 @@ public class Peer implements RMI {
         }
     }
 
-    public void deletechunks(String fileID) {
+    public boolean deletechunks(String fileID) {
         File file = new File(this.chunkDir + "/" + fileID);
-        File[] contents = file.listFiles();
-        if (contents != null) {
-            for (File f : contents) {
-                this.state.currentSize -= f.length() / 1000;
-                if (!f.delete())
-                    System.out.println("Error deleting chunk file");
-
+        if (file.exists()) {
+            File[] contents = file.listFiles();
+            if (contents != null) {
+                for (File f : contents) {
+                    this.state.currentSize -= f.length() / 1000;
+                    if (!f.delete()) {
+                        System.out.println("Error deleting chunk file");
+                        return false;
+                    }
+                }
             }
+            if (!file.delete())
+                System.out.println("Error deleting chunk folder");
+            return true;
         }
-        if (!file.delete())
-            System.out.println("Error deleting chunk folder");
+        return false;
     }
 
     public void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
@@ -500,7 +521,6 @@ public class Peer implements RMI {
                 System.out.println("Error creating chunk folder");
             }
         }
-
 
 
         FileOutputStream fos = new FileOutputStream(filename);
@@ -564,6 +584,7 @@ public class Peer implements RMI {
             case "GETCHUNK":
             case "DELETE":
             case "REMOVED":
+            case "DELETESUCESS":
             case "STORED":
                 groupToSend = this.controlListener.group;
                 portToSend = this.controlListener.port;
@@ -592,9 +613,9 @@ public class Peer implements RMI {
                 this.state.desiredRepDegree.put(fileID + "_" + chunkNO, Integer.parseInt(replicationDegree));
             }
             this.sendPacket("PUTCHUNK", fileID, chunkNO, replicationDegree, body, createEntry);
-            Thread.sleep((long) Math.pow(2, nTries)*1000);
+            Thread.sleep((long) Math.pow(2, nTries) * 1000);
             nTries++;
-            if(nTries > 5)
+            if (nTries > 5)
                 break;
         } while (this.state.replicationDegreeMap.get(fileID + "_" + chunkNO) == null ||
                 this.state.desiredRepDegree.get(fileID + "_" + chunkNO) == null ||

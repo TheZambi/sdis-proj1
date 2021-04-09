@@ -8,7 +8,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -32,6 +34,14 @@ public class MessageInterpreter {
             if (msg.peerID.equals(this.peer.peerID))
                 return;
 
+            this.peer.threadPool.execute( () -> {
+                try {
+                    this.checkForMissedPeerDelete(msg);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
+
             String fileChunk = msg.fileID + "_" + msg.chunkNO;
             this.printMsg(msg.messageType, msg.peerID);
             switch (msg.messageType) {
@@ -53,8 +63,30 @@ public class MessageInterpreter {
                 case "CHUNK":
                     this.processChunk(msg);
                     break;
+                case "DELETESUCESS":
+                    if(this.peer.protocolVersion.equals("1.1"))
+                        this.processDeleteSucess(msg);
+                    break;
 
             }
+        }
+    }
+
+    private void checkForMissedPeerDelete(Message msg) throws IOException {
+        for(Map.Entry<String, Set<String>> entry: this.peer.state.deletedFilesFromPeers.entrySet()){
+            if(entry.getValue().contains(msg.peerID)){
+                this.peer.sendPacket("DELETE", entry.getKey(), null, null, "".getBytes(), false);
+            }
+            if(msg.version.equals("1.0")){
+                this.peer.state.deletedFilesFromPeers.get(entry.getKey()).remove(msg.peerID);
+            }
+        }
+    }
+
+    private void processDeleteSucess(Message msg) {
+        this.peer.state.deletedFilesFromPeers.get(msg.fileID).remove(msg.peerID);
+        if(this.peer.state.deletedFilesFromPeers.get(msg.fileID).isEmpty()){
+            this.peer.state.deletedFilesFromPeers.remove(msg.fileID);
         }
     }
 
@@ -154,7 +186,13 @@ public class MessageInterpreter {
     private void processDeleteChunk(Message msg) {
         this.peer.threadPool.execute(() -> {
             try {
-                this.peer.deletechunks(msg.fileID);
+                boolean ret = this.peer.deletechunks(msg.fileID);
+                System.out.println("REturn: " + ret);
+                System.out.println();
+                if(ret && this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")){
+
+                    this.peer.sendPacket("DELETESUCESS", msg.fileID, null, null, "".getBytes(), false);
+                }
                 if(this.peer.state.currentSize < this.peer.state.maxSize && this.peer.state.maxSize != -1 && this.peer.protocolVersion.equals("1.1")){
                     if(!this.peer.dataListener.connect)
                         this.peer.dataListener.startThread();

@@ -7,6 +7,7 @@ public class PeerState implements Serializable {
     HashMap<String, Set<String>> replicationDegreeMap = new HashMap<>();
     HashMap<String, Integer> desiredRepDegree = new HashMap<>();
     HashMap<String, String> filenameToFileID = new HashMap<>();
+    HashMap<String,Set<String>> deletedFilesFromPeers = new HashMap<>();
     Set<String> operations = new HashSet<>();
     long maxSize = -1;
     long currentSize = 0;

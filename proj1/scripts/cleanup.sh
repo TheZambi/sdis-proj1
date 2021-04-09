@@ -29,4 +29,4 @@ fi
 
 cd peer${peer_id}
 rm -r chunks
-rm state.txt
+rm state
