@@ -6,6 +6,7 @@
 # Compiled code is placed under ./build/
 # Modify it if needed to suite your purpose
 
+mkdir -p build
 javac -d build *.java
 
 # If you are using jar files, and these must be in some particular
