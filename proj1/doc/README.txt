@@ -32,6 +32,6 @@ Send a command to a peer:
 
 
 Clean up:
-	On src folder do: ../scripts/cleanup.sh <peer_id>
+	On src/build/ folder do: ../../scripts/cleanup.sh <peer_id>
 	Where:
 		peer_id is the id of the peer to be cleaned up. The state is deleted as well as the chunk folder.
