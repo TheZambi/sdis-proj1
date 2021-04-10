@@ -525,7 +525,7 @@ public class Peer implements RMI {
                 System.out.println("Error deleting chunk folder");
             return true;
         }
-        return true;
+        return false;
     }
 
     public void saveChunk(String fileID, String chunkNO, byte[] body) throws IOException {
