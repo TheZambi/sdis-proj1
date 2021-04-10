@@ -79,5 +79,4 @@ esac
 # Should not need to change anything but the class and its package, unless you use any jar file
 
 # echo "java test.TestApp ${pap} ${oper} ${opernd_1} ${rep_deg}"
-cd build
 java TestApp ${pap} ${oper} ${opernd_1} ${rep_deg}

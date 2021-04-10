@@ -60,7 +60,7 @@ public class Peer implements RMI {
 
         this.recoveryListener = new Listener(multicastRecoveryAddr,multicastRecoveryPort ,this);
 
-        this.peerDir = "../peer" + this.peerID;
+        this.peerDir = "peer" + this.peerID;
         this.chunkDir = this.peerDir + "/chunks";
         this.stateFile = this.peerDir + "/state";
 
@@ -198,7 +198,7 @@ public class Peer implements RMI {
 
 
     public void backup(String fileName, Integer ReplicationDegree) throws Exception {
-        String filePath = "../peer" + this.peerID + "/" + fileName;
+        String filePath = "peer" + this.peerID + "/" + fileName;
         byte[] pack = new byte[64000];
         int bytesRead, currentChunk = 0, lastBytesRead = 0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
@@ -561,7 +561,7 @@ public class Peer implements RMI {
 
     private String makeFileID(String filePath) throws NoSuchAlgorithmException {
         StringBuilder ret = new StringBuilder();
-        File f = new File("../peer" + this.peerID + "/" + filePath);
+        File f = new File("peer" + this.peerID + "/" + filePath);
 
         //DATA
         String absPath = f.getAbsolutePath();
