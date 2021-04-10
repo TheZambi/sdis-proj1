@@ -3,6 +3,9 @@ SDIS 20/21 PROJ1 REPORT T5G04
 Compile:
 	On src folder do: ../scripts/compile.sh
 
+Setup:
+	No setup needed
+
 Run a peer:
 	Innitiate the rmiregistry on the build folder.
 	On src/build/ do: ../../scripts/peer.sh <protocol_version> <peer_id> <access_point> <multicast_control_address> <multicast_control_port> <multicast_data_backup_address> <multicast_data_backup_port> <multicast_data_recovery_address> <multicast_data_recovery_port>
