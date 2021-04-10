@@ -120,7 +120,7 @@ public class Peer implements RMI {
                 case "backup":
                     this.threadPool.execute(() -> {
                         try {
-                            this.backup(this.state.filenameToFileID.get(operation.get(1)), Integer.parseInt(operation.get(2)));
+                            this.backup(operation.get(1), Integer.parseInt(operation.get(2)));
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -199,6 +199,7 @@ public class Peer implements RMI {
 
     public void backup(String fileName, Integer ReplicationDegree) throws Exception {
         String filePath = "peer" + this.peerID + "/" + fileName;
+        this.state.operations.add("backup-" + fileName + "-" + ReplicationDegree);
         byte[] pack = new byte[64000];
         int bytesRead, currentChunk = 0, lastBytesRead = 0;
         FileInputStream fileInput = new FileInputStream(new File(filePath));
@@ -225,6 +226,8 @@ public class Peer implements RMI {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
+                if(body.length != 64000)
+                    this.state.operations.remove("backup-" + fileName + "-" + ReplicationDegree);
             });
             currentChunk++;
             lastBytesRead = bytesRead;
@@ -238,6 +241,7 @@ public class Peer implements RMI {
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
+                this.state.operations.remove("backup-" + fileName + "-" + ReplicationDegree);
             });
         }
     }
