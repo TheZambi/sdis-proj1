@@ -28,13 +28,16 @@ public class MessageInterpreter {
             if (msg.peerID.equals(this.peer.peerID))
                 return;
 
-            this.peer.threadPool.execute( () -> {
-                try {
-                    this.checkForMissedPeerDelete(msg);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
+            if(this.peer.protocolVersion.equals("1.1")) {
+                // If someone didn't delete the files its checked here and another DELETE message is sent
+                this.peer.threadPool.execute(() -> {
+                    try {
+                        this.checkForMissedPeerDelete(msg);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
 
             String fileChunk = msg.fileID + "_" + msg.chunkNO;
             this.printMsg(msg.messageType, msg.peerID);
@@ -77,6 +80,7 @@ public class MessageInterpreter {
         }
     }
 
+    //used in protocol version 1.1, removes per from deletedFilesFromPeers map
     private void processDeleteSucess(Message msg) {
         if(this.peer.state.deletedFilesFromPeers.get(msg.fileID) != null) {
             this.peer.state.deletedFilesFromPeers.get(msg.fileID).remove(msg.peerID);
@@ -97,8 +101,11 @@ public class MessageInterpreter {
                     & msg.version.equals("1.1")) {
                 int nTries = 0;
                 Socket socket = null;
+
+                //tries to connect to the other peer 5 times before giving up
                 while(nTries<5) {
                     try {
+                        //gets the socket to communicate with the peer
                         socket = new Socket(msg.address, Integer.parseInt(new String(msg.body)));
                         Thread.sleep(100);
                         break;
@@ -108,33 +115,39 @@ public class MessageInterpreter {
                 }
                 if(nTries==5)
                     return;
+
                 BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
                 byte[] buf = new byte[64000];
                 byte[] aux = new byte[64000];
                 int bytesRead, totalBytesRead = 0;
+                //since read can't read 64000 bytes, this stacks them in an auxiliary array to copy to the body
+                //in order to keep the total bytes read intact.
                 while((bytesRead = in.read(buf))!=-1)
                 {
                     arraycopy(buf, 0, aux, totalBytesRead, bytesRead);
                     totalBytesRead+=bytesRead;
                 }
+
+                //copies the auxiliary array to the body array
                 body = new byte[totalBytesRead];
                 arraycopy(aux,0,body,0,totalBytesRead);
                 in.close();
                 socket.close();
             }
-            else{
+            else{ //if any version is 1.0
                 body = msg.body;
             }
 
             this.peer.saveChunk(msg.fileID, msg.chunkNO, body);
             if (body.length != 64000) {
-                this.peer.restoreFile.put(msg.fileID, false);
-                this.peer.saveFile(msg.fileID);
+                //last chunk obtained
+                this.peer.restoreFile.put(msg.fileID, false); //restore file is no longer necessary
+                this.peer.saveFile(msg.fileID);//joins all chunks
                 this.peer.state.operations.remove("restore-" + msg.fileID);
-                this.peer.restoreFile.remove(msg.fileID);
+                this.peer.restoreFile.remove(msg.fileID);//removes file from restore map
             }
             else if (this.peer.restoreFile.get(msg.fileID)) {
-                this.peer.restore(chunkNO,msg.fileID);
+                this.peer.restore(chunkNO,msg.fileID); // calls the restore protocol for the next chunk
             }
         }
     }
@@ -168,6 +181,7 @@ public class MessageInterpreter {
                 else if(this.peer.state.filenameToFileID.get(msg.fileID) != null){
                     if(this.peer.state.replicationDegreeMap.get(fileChunk).size() == 0){
                         this.peer.backupProtocolThreadPool.execute(() -> {
+                            //if noone else has the chunk saved, the initiator peer sends another PUTCHUNK of the chunk
                             try {
                                 this.peer.backupLostChunk(msg.fileID, Integer.parseInt(msg.chunkNO));
                             } catch (Exception e) {
@@ -182,11 +196,13 @@ public class MessageInterpreter {
     private void processDeleteChunk(Message msg) {
         this.peer.threadPool.execute(() -> {
             try {
-                boolean ret = this.peer.deletechunks(msg.fileID);
+                boolean ret = this.peer.deletechunks(msg.fileID); //deletes all chunks, return value is if successful or not
                 if(ret && this.peer.protocolVersion.equals("1.1") && msg.version.equals("1.1")){
+                    //additional response to the delete protocol
                     this.peer.sendPacket("DELETESUCESS", msg.fileID, null, null, "".getBytes());
                 }
                 if(this.peer.state.currentSize < this.peer.state.maxSize && this.peer.state.maxSize != -1 && this.peer.protocolVersion.equals("1.1")){
+                    //if there is enough space available resumes listening to the thread
                     if(!this.peer.dataListener.connect)
                         this.peer.dataListener.startThread();
                 }
@@ -197,6 +213,7 @@ public class MessageInterpreter {
 
     }
 
+    //responds to the GETCHUNK message
     private void processGetChunk(Message msg) {
         this.peer.getChunkMap.put(msg.fileID+"_"+msg.chunkNO,true);
         this.peer.threadPool.schedule(() -> {
@@ -214,10 +231,13 @@ public class MessageInterpreter {
     private void processPutChunk(String fileChunk,Message msg) {
             if (this.peer.state.filenameToFileID.get(msg.fileID) == null) {
 
+                //saves the desired replication degree
                 this.peer.state.desiredRepDegree.put(fileChunk, Integer.parseInt(msg.replicationDegree));
 
+                //creates a set to save the peers that have the chunk saves
                 this.peer.state.replicationDegreeMap.computeIfAbsent(fileChunk, k -> new HashSet<>());
 
+                //introduces self into the set with the chunks
                 this.peer.state.replicationDegreeMap.get(fileChunk).add(this.peer.peerID);
 
                 this.peer.threadPool.schedule(() -> {
@@ -229,6 +249,7 @@ public class MessageInterpreter {
 
                         }
                         else if(this.peer.state.currentSize >= this.peer.state.maxSize && this.peer.state.maxSize != -1 && this.peer.protocolVersion.equals("1.1")){
+                            //if no more space is available stops listening to the data channel
                             this.peer.dataListener.connect = false;
                         }
                     } catch (Exception e) {
