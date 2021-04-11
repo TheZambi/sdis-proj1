@@ -287,24 +287,9 @@ public class Peer implements RMI {
         fileInput.close();
     }
 
-    public void restore(String filePath) throws IOException {
+    public void restore(String filePath) throws IOException, NoSuchAlgorithmException {
         //starts the file restoration protocol
-        String fileID = "";
-
-        //checks if the file to be restores was backed up before
-        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
-            if (entry.getValue().equals(filePath)) {
-                fileID = entry.getKey();
-                break;
-            }
-        }
-
-        //if no file was found to be restored the protocol is aborted
-        if (fileID.equals("")) {
-            System.out.println("File is not backed up!");
-            return;
-        }
-
+        String fileID = this.makeFileID(filePath);
         this.state.operations.add("restore-" + fileID);
         this.restoreFile.put(fileID, true);
         this.sendPacket("GETCHUNK", fileID, "0", null, "".getBytes());
