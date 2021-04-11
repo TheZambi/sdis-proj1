@@ -18,11 +18,10 @@ public class Message {
     public Message(byte[] msg) {
         String s = new String(msg); //ignores following \0
         String[] arr = s.split("\r\n\r\n"); //separates body from header
-
         Integer index = s.indexOf("\r\n\r\n") + 4;
         String header = arr[0];
         byte[] body;
-        if(arr.length ==2)
+        if(arr.length >=2)
             body = Arrays.copyOfRange(msg, index, msg.length); //copies from the original array to maintain encoding
         else
             body = new byte[]{}; //if there is not body, creates an empty body so operations can be performed on it
