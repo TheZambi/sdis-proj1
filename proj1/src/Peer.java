@@ -586,6 +586,8 @@ public class Peer implements RMI {
             File[] contents = file.listFiles();
             if (contents != null) {
                 for (File f : contents) {
+                    this.state.replicationDegreeMap.remove(f.getName());
+                    this.state.desiredRepDegree.remove(f.getName());
                     this.state.currentSize -= f.length() / 1000;
                     if (!f.delete()) {
                         System.out.println("Error deleting chunk file");
