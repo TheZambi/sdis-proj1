@@ -170,7 +170,6 @@ public class Peer implements RMI {
         Peer peer = new Peer(args);
         peer.joinMulticast();
         peer.updateFileChanges();
-        peer.setupRMI();
 
         //thread that saves the state every second
         peer.threadPool.scheduleAtFixedRate(() -> {
@@ -180,6 +179,9 @@ public class Peer implements RMI {
                 e.printStackTrace();
             }
         }, 0, 1, TimeUnit.SECONDS);
+
+        //connect RMI last in case it doesn't exist
+        peer.setupRMI();
 
     }
 
