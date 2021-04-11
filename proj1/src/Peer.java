@@ -396,6 +396,10 @@ public class Peer implements RMI {
             while (this.state.currentSize > this.state.maxSize && currentIndex < filenameToExcessReplicationDegree.size()) {
                 String fileID = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[0];
                 String chunkNo = filenameToExcessReplicationDegree.get(currentIndex).get(0).split("_")[1];
+
+                this.state.replicationDegreeMap.remove(filenameToExcessReplicationDegree.get(currentIndex).get(0));
+                this.state.desiredRepDegree.remove(filenameToExcessReplicationDegree.get(currentIndex).get(0));
+
                 this.sendPacket("REMOVED", fileID, chunkNo, null, "".getBytes());
                 this.state.currentSize -= Long.parseLong(filenameToExcessReplicationDegree.get(currentIndex).get(2)) / 1000;
                 File toDelete = new File(this.chunkDir + "/" + fileID + "/" + filenameToExcessReplicationDegree.get(currentIndex).get(0));
@@ -405,7 +409,7 @@ public class Peer implements RMI {
                 currentIndex++;
             }
         }
-        this.state.operations.add("reclaim-" + maxSize);
+        this.state.operations.remove("reclaim-" + maxSize);
 
         //restarts data listening function if there is available space
         if (this.state.currentSize < this.state.maxSize && this.state.maxSize != -1 && this.protocolVersion.equals("1.1")) {
