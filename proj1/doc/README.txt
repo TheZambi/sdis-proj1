@@ -7,11 +7,11 @@ Setup:
 	No setup needed
 
 Run a peer:
-	Innitiate the rmiregistry on the build folder.
+	Initiate the rmiregistry on the build folder.
 	On src/build/ do: ../../scripts/peer.sh <protocol_version> <peer_id> <access_point> <multicast_control_address> <multicast_control_port> <multicast_data_backup_address> <multicast_data_backup_port> <multicast_data_recovery_address> <multicast_data_recovery_port>
 	
 	Where:
-		protocol_version is 1.0 for base program, 1.1 for enhancements
+		protocol_version is 1.0 for base program, 1.1 for enhanced version
 		peer_id is an integer
 		access_point is the rmi access point
 		multicast_control_address and multicast_control_port are the address and the port for the multicast channel where control messages are sent
@@ -32,6 +32,6 @@ Send a command to a peer:
 
 
 Clean up:
-	On src folder do: ../scripts/cleanup.sh <peer_id>
+	On src/build/ folder do: ../../scripts/cleanup.sh <peer_id>
 	Where:
 		peer_id is the id of the peer to be cleaned up. The state is deleted as well as the chunk folder.
