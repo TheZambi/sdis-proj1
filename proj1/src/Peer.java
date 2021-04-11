@@ -343,7 +343,22 @@ public class Peer implements RMI {
         //starts the delete protocol
 
         this.state.operations.add("delete-" + filePath);
-        String fileID = this.makeFileID(filePath);
+
+        String fileID = "";
+
+        //checks if the file to be delete was backed up before
+        for (Map.Entry<String, String> entry : this.state.filenameToFileID.entrySet()) {
+            if (entry.getValue().equals(filePath)) {
+                fileID = entry.getKey();
+                break;
+            }
+        }
+
+        //if no file was found to be deleted the protocol is aborted
+        if (fileID.equals("")) {
+            System.out.println("File is not backed up!");
+            return;
+        }
 
         //creates an entry on the map of peers that need to delete a file if the protocol version is 1.1
         //and removes the file's entries from the other maps
