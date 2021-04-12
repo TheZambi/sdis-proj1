@@ -15,8 +15,8 @@ Run a peer:
 		peer_id is an integer
 		access_point is the rmi access point
 		multicast_control_address and multicast_control_port are the address and the port for the multicast channel where control messages are sent
-		multicast_data_backup_address and multicast_data_backup_port are the address and the port for the multicast channel where control messages are sent
-		multicast_data_recovery_address and multicast_data_recovery_port are the address and the port for the multicast channel where control messages are sent
+		multicast_data_backup_address and multicast_data_backup_port are the address and the port for the multicast channel where data messages are sent
+		multicast_data_recovery_address and multicast_data_recovery_port are the address and the port for the multicast channel where recovery messages are sent
 
 Send a command to a peer:
 	On src/build/ do: ../../scripts/test.sh <peer_access_point> <command> {args}
